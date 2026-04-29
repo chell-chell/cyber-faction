@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyber Faction: 創造 vs 破壊</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="titles.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="db.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+JP:wght@400;700&display=swap');
+        
+        body { font-family: 'Noto Sans JP', sans-serif; background-color: #0a0a0a; color: #e5e5e5; overflow: hidden; }
+        .font-cyber { font-family: 'Share Tech Mono', monospace; }
+        
+        /* 陣営エフェクト */
+        .neon-text-create { text-shadow: 0 0 5px #fef08a, 0 0 15px #fef08a; } 
+        .neon-text-destroy { text-shadow: 0 0 5px #a855f7, 0 0 15px #a855f7; } 
+        
+        .neon-border-create { box-shadow: 0 0 10px rgba(254, 240, 138, 0.3), inset 0 0 10px rgba(254, 240, 138, 0.2); border-color: #fef08a; }
+        .neon-border-destroy { box-shadow: 0 0 10px rgba(168, 85, 247, 0.3), inset 0 0 10px rgba(168, 85, 247, 0.2); border-color: #a855f7; }
+
+        .miss-flash { animation: flash-red 0.3s; }
+        @keyframes flash-red { 0% { background-color: rgba(244, 63, 94, 0.5); } 100% { background-color: transparent; } }
+
+        .awaken-create { animation: pulse-create 1s infinite alternate; }
+        .awaken-destroy { animation: pulse-destroy 1s infinite alternate; }
+        
+        @keyframes pulse-create {
+            from { box-shadow: 0 0 10px #fef08a, inset 0 0 10px #fef08a; text-shadow: 0 0 5px #fef08a; }
+            to { box-shadow: 0 0 30px #fef08a, inset 0 0 20px #fef08a; text-shadow: 0 0 20px white; }
+        }
+        @keyframes pulse-destroy {
+            from { box-shadow: 0 0 10px #a855f7, inset 0 0 10px #a855f7; text-shadow: 0 0 5px #a855f7; }
+            to { box-shadow: 0 0 30px #a855f7, inset 0 0 20px #a855f7; text-shadow: 0 0 20px white; }
+        }
+
+        /* 打鍵時の波紋エフェクト */
+        .ripple { position: absolute; border-radius: 50%; transform: scale(0); animation: ripple-anim 0.4s ease-out; pointer-events: none; }
+        @keyframes ripple-anim { to { transform: scale(4); opacity: 0; } }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        
+        .typed-char { color: #6b7280; text-decoration: line-through; }
+        .current-char { color: white; text-decoration: underline; font-weight: bold; }
+        .untyped-char { color: inherit; }
+
+        /* ===== 世界ゲージ連動背景システム ===== */
+        body { transition: background 3s ease; }
+        body.world-create-weak  { background: radial-gradient(ellipse at 15% 15%, #051a0a 0%, #0a0a0a 70%); }
+        body.world-create-strong { background: radial-gradient(ellipse at 15% 15%, #0a2e12 0%, #051508 45%, #0a0a0a 85%); }
+        body.world-create-extreme { background: radial-gradient(ellipse at 15% 15%, #0d3d18 0%, #082010 40%, #050d05 80%, #0a0a0a 100%); animation: bg-create-pulse 4s ease-in-out infinite alternate; }
+        body.world-destroy-weak  { background: radial-gradient(ellipse at 85% 85%, #1a0508 0%, #0a0a0a 70%); }
+        body.world-destroy-strong { background: radial-gradient(ellipse at 85% 85%, #2d0610 0%, #180408 45%, #0a0a0a 85%); }
+        body.world-destroy-extreme { background: radial-gradient(ellipse at 85% 85%, #3a0810 0%, #1f0508 40%, #0d0308 80%, #0a0a0a 100%); animation: bg-destroy-pulse 3s ease-in-out infinite alternate; }
+
+        @keyframes bg-create-pulse { from { filter: brightness(1.0); } to { filter: brightness(1.12) saturate(1.2); } }
+        @keyframes bg-destroy-pulse { from { filter: brightness(1.0); } to { filter: brightness(1.1) saturate(1.15) hue-rotate(-5deg); } }
+
+        /* 回路グリッドオーバーレイ (CREATE優勢時) */
+        #world-bg-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0; transition: opacity 3s ease; }
+        body.world-create-strong #world-bg-overlay, body.world-create-extreme #world-bg-overlay {
+            opacity: 1;
+            background-image: linear-gradient(rgba(0,255,120,0.022) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,120,0.022) 1px, transparent 1px);
+            background-size: 50px 50px;
+            animation: circuit-scroll 30s linear infinite;
+        }
+        @keyframes circuit-scroll { 0% { background-position: 0 0; } 100% { background-position: 50px 50px; } }
+
+        /* グリッチオーバーレイ (DESTROY優勢時) */
+        #glitch-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: 0; transition: opacity 2s ease; overflow: hidden; }
+        body.world-destroy-strong #glitch-overlay, body.world-destroy-extreme #glitch-overlay { animation: glitch-appear 9s infinite; }
+        @keyframes glitch-appear {
+            0%,84%,100% { opacity: 0; }
+            85% { opacity: 0.35; background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(220,38,38,0.07) 2px, rgba(220,38,38,0.07) 4px); }
+            87% { opacity: 0; }
+            91% { opacity: 0.22; background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(168,85,247,0.05) 3px, rgba(168,85,247,0.05) 6px); }
+            93% { opacity: 0; }
+        }
+
+        /* パーティクルキャンバス */
+        #particle-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 10; width: 100%; height: 100%; border-radius: inherit; }
+
+        /* セット称号のタイピングボックスグロー */
+        #typing-box.title-glow { transition: box-shadow 0.5s ease, border-color 0.5s ease; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col relative">
+
+    <!-- 世界ゲージ連動背景オーバーレイ -->
+    <div id="world-bg-overlay"></div>
+    <div id="glitch-overlay"></div>
+
+    <div id="flash-overlay" class="absolute inset-0 pointer-events-none z-50 transition-colors duration-300"></div>
+
+    <!-- SETTINGS BUTTON -->
+    <button onclick="openSettingsModal()" class="absolute bottom-4 right-4 p-3 bg-gray-800/80 hover:bg-gray-700 border border-gray-600 rounded-full text-gray-400 hover:text-white transition-colors z-40 shadow-lg" title="SETTINGS">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+    </button>
+
+    <!-- スタート画面 -->
+    <div id="start-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-30 backdrop-blur-md overflow-y-auto py-8">
+        <h1 class="text-6xl font-cyber mb-2 tracking-wider text-center relative">CYBER <span class="text-yellow-200">FACTION</span></h1>
+        <p class="text-gray-400 mb-6 text-center text-sm">創造と破壊の勢力戦。<br>君のタイピングが、このネットワーク世界の運命を決める。</p>
+
+        <div class="flex gap-4 mb-6 flex-wrap justify-center">
+            <button onclick="openCollectionModal()" class="flex items-center gap-2 px-6 py-3 border border-cyan-700 bg-cyan-900/30 hover:bg-cyan-900/60 rounded text-cyan-300 font-cyber transition-colors shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1.323l3.954 1.582 1.599-.8a1 1 0 01.894 1.79l-1.233.616 1.738 5.42a1 1 0 01-.285 1.05A3.989 3.989 0 0115 15a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.715-5.349L11 6.477V16h2a1 1 0 110 2H7a1 1 0 110-2h2V6.477L6.237 7.582l1.715 5.349a1 1 0 01-.285 1.05A3.989 3.989 0 015 15a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.738-5.42-1.233-.617a1 1 0 01.894-1.788l1.599.799L9 4.323V3a1 1 0 011-1z" clip-rule="evenodd" /></svg>TITLES (称号)<span id="title-progress" class="ml-2 text-xs text-gray-400"></span>
+            </button>
+            <button onclick="openHistoryModal()" class="flex items-center gap-2 px-6 py-3 border border-emerald-700 bg-emerald-900/30 hover:bg-emerald-900/60 rounded text-emerald-300 font-cyber transition-colors shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" /></svg>HISTORY
+            </button>
+            <button onclick="openHowToModal()" class="flex items-center gap-2 px-6 py-3 border border-gray-600 bg-gray-800/50 hover:bg-gray-700/60 rounded text-gray-300 font-cyber transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>HOW TO PLAY
+            </button>
+        </div>
+
+        <div class="flex flex-col md:flex-row gap-6 w-full max-w-5xl px-4 h-auto md:h-[400px]">
+            <div class="w-full md:w-1/3 flex flex-col gap-4 h-full">
+                <div class="bg-gray-900/80 border border-gray-700 p-4 rounded-xl shadow-lg">
+                    <h3 class="text-gray-400 text-xs mb-2 font-cyber border-b border-gray-700 pb-1 tracking-widest">WORLD STATUS</h3>
+                    <div class="flex justify-between items-end mb-1">
+                        <div class="text-yellow-200 font-bold font-cyber text-[10px]">CREATE <span id="start-score-create" class="text-xs">50.0%</span></div>
+                        <div class="text-purple-400 font-bold font-cyber text-[10px]"><span id="start-score-destroy" class="text-xs">50.0%</span> DESTROY</div>
+                    </div>
+                    <div class="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden flex">
+                        <div id="start-gauge-create" class="h-full bg-yellow-400 transition-all duration-500 ease-out" style="width: 50%;"></div>
+                        <div id="start-gauge-destroy" class="h-full bg-purple-500 transition-all duration-500 ease-out" style="width: 50%;"></div>
+                    </div>
+                    <div class="mt-2 text-right"><p class="text-[10px] text-gray-500">累計貢献度: <span id="start-total-contrib" class="text-gray-300">0</span>pt</p></div>
+                </div>
+                <div class="bg-gray-900/80 border border-gray-700 p-4 rounded-xl shadow-lg flex-1 flex flex-col overflow-hidden">
+                    <div class="flex gap-1 mb-3 border-b border-gray-700 pb-2">
+                        <button id="tab-score-start" onclick="switchRankTab('score')" class="flex-1 text-[10px] font-cyber tracking-widest py-1 rounded transition-colors bg-yellow-900/60 text-yellow-300 border border-yellow-700">SCORE</button>
+                        <button id="tab-contrib-start" onclick="switchRankTab('contrib')" class="flex-1 text-[10px] font-cyber tracking-widest py-1 rounded transition-colors text-gray-500 border border-gray-700 hover:text-gray-300">CONTRIB</button>
+                    </div>
+                    <div id="start-ranking-list" class="space-y-2 font-cyber text-sm overflow-y-auto pr-2"></div>
+                </div>
+            </div>
+
+            <div class="w-full md:w-2/3 flex flex-col h-full relative">
+                <div id="panel-unassigned" class="bg-gray-900/80 border border-gray-700 p-6 rounded-xl shadow-lg flex flex-col h-full justify-between transition-all duration-500">
+                    <div>
+                        <h3 class="text-gray-400 text-sm mb-3 font-cyber tracking-widest text-center border-b border-gray-700 pb-2">AGENT REGISTRATION</h3>
+                        <input type="text" id="player-name-input" class="w-full bg-black border border-gray-600 rounded-lg p-4 text-white font-cyber text-xl text-center focus:outline-none focus:border-cyan-400 mb-2 transition-colors shadow-inner" placeholder="ENTER YOUR CODENAME" maxlength="12">
+                        <p class="text-center text-xs text-rose-400">所属陣営を選択せよ。</p>
+                    </div>
+                    <div class="flex-1 flex flex-col justify-end mt-4">
+                        <div class="flex gap-4 h-32">
+                            <button onclick="joinFaction('create')" class="flex-1 p-4 border border-yellow-400 rounded-lg bg-yellow-900/20 hover:bg-yellow-900/40 transition duration-300 group flex flex-col justify-center items-center text-center">
+                                <h2 class="text-2xl font-bold text-yellow-200 mb-1">創造チーム</h2>
+                                <p class="text-[10px] text-yellow-100/70">システムを構築し守る</p>
+                            </button>
+                            <button onclick="joinFaction('destroy')" class="flex-1 p-4 border border-purple-500 rounded-lg bg-purple-900/20 hover:bg-purple-900/40 transition duration-300 group flex flex-col justify-center items-center text-center">
+                                <h2 class="text-2xl font-bold text-purple-400 mb-1">破壊チーム</h2>
+                                <p class="text-[10px] text-purple-300/70">旧システムを破壊する</p>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="panel-assigned" class="hidden bg-gray-900/80 border border-gray-700 p-6 rounded-xl shadow-lg flex-col h-full justify-between transition-all duration-500 relative overflow-hidden">
+                    <div id="assigned-bg-glow" class="absolute -top-20 -right-20 w-64 h-64 rounded-full blur-3xl opacity-20 pointer-events-none"></div>
+                    <div class="flex justify-between items-start z-10 border-b border-gray-700 pb-4 mb-4">
+                        <div>
+                            <p class="text-gray-500 text-xs font-cyber tracking-widest mb-1">WELCOME BACK, AGENT</p>
+                            <div class="flex items-center gap-2">
+                                <h2 id="assigned-name" class="text-3xl font-bold text-white tracking-widest">GUEST</h2>
+                                <button onclick="openRenameModal()" class="text-gray-500 hover:text-cyan-400 transition-colors" title="名前を変更 (50,000pt)"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg></button>
+                            </div>
+                            <div class="mt-2 flex items-center gap-2">
+                                <span id="assigned-faction-badge" class="px-2 py-0.5 rounded text-[10px] font-bold tracking-widest border uppercase">FACTION</span>
+                                <button onclick="openEquipModal()" id="assigned-title-badge" class="px-2 py-0.5 rounded text-[10px] font-bold tracking-widest border border-gray-500 text-gray-400 hover:text-white hover:border-white transition-colors cursor-pointer flex items-center gap-1" title="称号をセットする"><svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>NO TITLE</button>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-gray-500 text-[10px] font-cyber tracking-widest mb-1">AVAILABLE POINTS</p>
+                            <p id="assigned-currency" class="text-2xl font-cyber text-cyan-300 font-bold">0 <span class="text-sm">pt</span></p>
+                            <p class="text-gray-600 text-[10px] mt-1 font-cyber tracking-widest">累計貢献度: <span id="assigned-total-contrib-panel" class="text-gray-300">0</span> pt</p>
+                            <button onclick="openTransferModal()" class="text-xs text-gray-500 hover:text-white underline mt-1 block w-full text-right">陣営移籍</button>
+                        </div>
+                    </div>
+                    <div class="flex-1 flex flex-col justify-center gap-4 z-10">
+                        <button onclick="startGame()" id="btn-mission-start" class="w-full py-6 rounded-lg text-4xl font-bold font-cyber tracking-widest transition-all duration-300 shadow-lg hover:scale-[1.02] flex flex-col items-center">
+                            <span>MISSION START</span><span class="text-xs font-normal opacity-70">Press [Space]</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <p class="mt-6 text-xs text-gray-600 text-center">※PC物理キーボード専用。<br>サウンドをONにすると没入感がアップします。(右下の歯車アイコンで設定)</p>
+    </div>
+
+    <!-- モーダル群 -->
+    <!-- HOW TO PLAY モーダル -->
+    <div id="howto-modal" class="hidden absolute inset-0 bg-black/95 z-50 flex-col items-center justify-center p-4 backdrop-blur-md overflow-y-auto">
+        <div class="w-full max-w-2xl bg-gray-900 border border-gray-700 rounded-xl shadow-2xl my-auto">
+            <div class="border-b border-gray-700 px-8 py-5 flex items-center justify-between">
+                <h2 class="text-2xl font-cyber tracking-widest text-gray-200">HOW TO PLAY</h2>
+                <button onclick="closeModal('howto-modal')" class="text-gray-500 hover:text-white transition-colors font-cyber text-sm">✕ CLOSE</button>
+            </div>
+            <div class="px-8 py-6 space-y-6 text-sm text-gray-300 leading-relaxed">
+
+                <!-- CONCEPT -->
+                <div>
+                    <h3 class="font-cyber text-yellow-300 tracking-widest text-xs mb-3 border-b border-gray-800 pb-2">■ CONCEPT</h3>
+                    <p class="text-gray-400">創造と破壊の陣営に分かれ、タイピングで世界の勢力を奪い合うゲームです。あなたが打ち込んだすべての文字が陣営の貢献ポイントになり、リアルタイムで世界ゲージに反映されます。</p>
+                </div>
+
+                <!-- START -->
+                <div>
+                    <h3 class="font-cyber text-yellow-300 tracking-widest text-xs mb-3 border-b border-gray-800 pb-2">■ GAME START</h3>
+                    <div class="space-y-2">
+                        <div class="flex gap-4 items-start">
+                            <span class="font-cyber text-cyan-400 shrink-0 w-6 text-center">1</span>
+                            <p>コードネーム（名前）を入力する</p>
+                        </div>
+                        <div class="flex gap-4 items-start">
+                            <span class="font-cyber text-cyan-400 shrink-0 w-6 text-center">2</span>
+                            <p><span class="text-yellow-200 font-bold">創造チーム</span>か<span class="text-purple-400 font-bold">破壊チーム</span>を選択する</p>
+                        </div>
+                        <div class="flex gap-4 items-start">
+                            <span class="font-cyber text-cyan-400 shrink-0 w-6 text-center">3</span>
+                            <p><span class="font-cyber text-white border border-gray-600 px-2 py-0.5 rounded text-xs">SPACE</span> キーでミッション開始</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TYPING -->
+                <div>
+                    <h3 class="font-cyber text-yellow-300 tracking-widest text-xs mb-3 border-b border-gray-800 pb-2">■ TYPING RULES</h3>
+                    <div class="space-y-2 text-gray-400">
+                        <p>・<span class="text-white">ローマ字入力</span>で画面に表示されるかなを入力します</p>
+                        <p>・IMEは必ずOFF（直接入力モード）にしてください</p>
+                        <p>・制限時間は<span class="text-white">60秒</span>。より多くの単語を入力するほどスコアが上がります</p>
+                        <p>・コンボが続くとボーナスポイントが加算されます</p>
+                        <p>・ミス入力が多いと精度が下がり、称号獲得に影響します</p>
+                    </div>
+                </div>
+
+                <!-- SCORE -->
+                <div>
+                    <h3 class="font-cyber text-yellow-300 tracking-widest text-xs mb-3 border-b border-gray-800 pb-2">■ SCORE & RANKING</h3>
+                    <div class="space-y-2 text-gray-400">
+                        <p>・ゲーム終了時のスコアがリアルタイムでランキングに反映されます</p>
+                        <p>・<span class="text-white">SCOREランキング</span>：1回のゲームのハイスコア順</p>
+                        <p>・<span class="text-white">CONTRIBランキング</span>：累計貢献ポイント順（継続プレイが有利）</p>
+                        <p>・獲得ポイントは世界ゲージと陣営の勢力に影響します</p>
+                    </div>
+                </div>
+
+                <!-- TITLES -->
+                <div>
+                    <h3 class="font-cyber text-yellow-300 tracking-widest text-xs mb-3 border-b border-gray-800 pb-2">■ 称号システム</h3>
+                    <div class="space-y-2 text-gray-400">
+                        <p>・スコア・精度・ランキング・累計プレイ回数などで称号が解放されます</p>
+                        <p>・称号を<span class="text-white">装備</span>するとタイピングの打鍵音とエフェクトが変化します</p>
+                        <p>・条件が公開されていない<span class="text-amber-400">シークレット称号</span>も存在します</p>
+                    </div>
+                </div>
+
+                <!-- FACTION -->
+                <div>
+                    <h3 class="font-cyber text-yellow-300 tracking-widest text-xs mb-3 border-b border-gray-800 pb-2">■ 陣営について</h3>
+                    <div class="space-y-2 text-gray-400">
+                        <p>・陣営の移籍には獲得ポイントが必要です（戦況によってコストが変動）</p>
+                        <p>・月末に優勢陣営が決定し、貢献者に特別称号が付与されます</p>
+                        <p>・世界ゲージが80%を超えると背景演出が激しく変化します</p>
+                    </div>
+                </div>
+
+                <!-- KEYS -->
+                <div>
+                    <h3 class="font-cyber text-yellow-300 tracking-widest text-xs mb-3 border-b border-gray-800 pb-2">■ キー操作</h3>
+                    <div class="grid grid-cols-2 gap-2 text-gray-400">
+                        <div class="flex items-center gap-3 bg-gray-800/60 rounded p-2">
+                            <span class="font-cyber text-white border border-gray-600 px-2 py-0.5 rounded text-xs">SPACE</span>
+                            <span>ゲーム開始</span>
+                        </div>
+                        <div class="flex items-center gap-3 bg-gray-800/60 rounded p-2">
+                            <span class="font-cyber text-white border border-gray-600 px-2 py-0.5 rounded text-xs">ESC</span>
+                            <span>トップに戻る</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            <div class="border-t border-gray-700 px-8 py-4">
+                <button onclick="closeModal('howto-modal')" class="w-full py-3 bg-gray-800 hover:bg-gray-700 text-white font-bold rounded-lg border border-gray-600 transition-colors font-cyber tracking-widest">UNDERSTOOD</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="hidden absolute inset-0 bg-black/95 z-50 flex-col items-center justify-center p-4 backdrop-blur-md">
+        <div class="w-full max-w-sm bg-gray-900 border border-gray-700 rounded-xl p-8 flex flex-col shadow-2xl">
+            <h2 class="text-2xl font-cyber text-center mb-6 text-gray-300 border-b border-gray-700 pb-4">SYSTEM SETTINGS</h2>
+            <div class="space-y-4 mb-8">
+                <div class="flex justify-between items-center bg-black/50 p-4 rounded border border-gray-800">
+                    <span class="font-cyber text-gray-300 text-sm">BGM (背景音)</span>
+                    <button id="btn-toggle-bgm" onclick="toggleBGM()" class="px-4 py-1 font-bold rounded text-sm transition-colors">ON</button>
+                </div>
+                <div class="flex justify-between items-center bg-black/50 p-4 rounded border border-gray-800">
+                    <span class="font-cyber text-gray-300 text-sm">SFX (打鍵音等)</span>
+                    <button id="btn-toggle-sfx" onclick="toggleSFX()" class="px-4 py-1 font-bold rounded text-sm transition-colors">ON</button>
+                </div>
+                <div class="flex justify-between items-center bg-black/50 p-4 rounded border border-gray-800">
+                    <span class="font-cyber text-gray-300 text-sm">VISUAL (背景・パーティクル)</span>
+                    <button id="btn-toggle-visual" onclick="toggleVisual()" class="px-4 py-1 font-bold rounded text-sm transition-colors">ON</button>
+                </div>
+            </div>
+            <button onclick="closeModal('settings-modal')" class="w-full py-3 bg-gray-800 hover:bg-gray-700 text-white font-bold rounded-lg border border-gray-600 transition-colors">CLOSE</button>
+        </div>
+    </div>
+
+    <div id="transfer-modal" class="hidden absolute inset-0 bg-black/95 z-50 flex-col items-center justify-center p-4 backdrop-blur-md">
+        <div class="w-full max-w-lg bg-gray-900 border border-gray-700 rounded-xl p-8 flex flex-col shadow-[0_0_30px_rgba(244,63,94,0.2)]">
+            <h2 class="text-3xl font-cyber text-center mb-6 tracking-widest text-white border-b border-gray-700 pb-4">FACTION TRANSFER</h2>
+            <div class="space-y-4 mb-8">
+                <div class="bg-black/50 p-4 rounded-lg border border-gray-800 flex flex-col items-center">
+                    <p class="text-gray-500 text-xs mb-2">現在のワールド戦況に基づく移籍コスト</p>
+                    <p id="transfer-cost-display" class="text-4xl font-cyber font-bold text-rose-400">0 pt</p>
+                    <p id="transfer-cost-reason" class="text-xs text-gray-400 mt-2 text-center"></p>
+                </div>
+                <div class="flex justify-between items-center px-4 text-sm font-cyber">
+                    <span class="text-gray-500">YOUR POINTS:</span><span id="transfer-current-pts" class="text-cyan-300 text-xl font-bold">0 pt</span>
+                </div>
+            </div>
+            <div class="flex gap-4">
+                <button onclick="closeModal('transfer-modal')" class="flex-1 py-3 bg-gray-800 text-white font-bold rounded-lg">CANCEL</button>
+                <button id="btn-execute-transfer" onclick="executeTransfer()" class="flex-1 py-3 bg-rose-600 text-white font-bold rounded-lg">EXECUTE</button>
+            </div>
+            <p id="transfer-error-msg" class="text-rose-500 text-xs text-center mt-4 hidden font-bold">ポイントが不足しています</p>
+        </div>
+    </div>
+
+    <div id="rename-modal" class="hidden absolute inset-0 bg-black/95 z-50 flex-col items-center justify-center p-4 backdrop-blur-md">
+        <div class="w-full max-w-lg bg-gray-900 border border-gray-700 rounded-xl p-8 shadow-[0_0_30px_rgba(6,182,212,0.2)]">
+            <h2 class="text-3xl font-cyber text-center mb-6 tracking-widest text-cyan-300 border-b border-gray-700 pb-4">CHANGE CODENAME</h2>
+            <div class="space-y-4 mb-8">
+                <input type="text" id="new-name-input" class="w-full bg-black border border-gray-600 rounded-lg p-4 text-white font-cyber text-xl text-center" placeholder="NEW CODENAME" maxlength="12">
+                <div class="flex justify-between px-4 text-sm font-cyber mt-4"><span class="text-gray-500">COST: 50,000 pt | YOUR PTS:</span><span id="rename-current-pts" class="text-cyan-300 font-bold">0 pt</span></div>
+            </div>
+            <div class="flex gap-4">
+                <button onclick="closeModal('rename-modal')" class="flex-1 py-3 bg-gray-800 text-white font-bold rounded-lg">CANCEL</button>
+                <button id="btn-execute-rename" onclick="executeRename()" class="flex-1 py-3 bg-cyan-700 text-white font-bold rounded-lg">EXECUTE</button>
+            </div>
+            <p id="rename-error-msg" class="text-rose-500 text-xs text-center mt-4 hidden font-bold">ポイントが不足しています</p>
+        </div>
+    </div>
+
+    <div id="collection-modal" class="hidden absolute inset-0 bg-black/95 z-50 flex-col items-center justify-center p-4 backdrop-blur-md">
+        <div class="w-full max-w-5xl bg-gray-900 border border-gray-700 rounded-xl p-8 flex flex-col h-[85vh] shadow-2xl">
+            <h2 class="text-3xl font-cyber text-center mb-2 tracking-widest text-cyan-300">TITLE COLLECTION</h2>
+            <p class="text-center text-gray-400 text-xs mb-4">獲得した称号をクリックして「装備」すると、タイピング音やエフェクトが変化するぞ。</p>
+            <div class="flex-1 overflow-y-auto pr-4" id="collection-list"></div>
+            <button onclick="closeModal('collection-modal')" class="mt-6 px-12 py-4 bg-gray-800 text-white font-bold rounded-lg self-center">CLOSE</button>
+        </div>
+    </div>
+
+    <div id="history-modal" class="hidden absolute inset-0 bg-black/95 z-50 flex-col items-center justify-center p-4 backdrop-blur-md">
+        <div class="w-full max-w-4xl bg-gray-900 border border-gray-700 rounded-xl p-8 flex flex-col h-[80vh] shadow-2xl">
+            <h2 class="text-3xl font-cyber text-center mb-6 text-emerald-300">PLAY HISTORY</h2>
+            <div class="flex-1 overflow-y-auto space-y-4" id="history-list"></div>
+            <button onclick="closeModal('history-modal')" class="mt-6 px-12 py-4 bg-gray-800 text-white font-bold rounded-lg self-center">CLOSE</button>
+        </div>
+    </div>
+
+    <div id="mobile-warning-modal" class="hidden absolute inset-0 bg-black/95 z-[60] flex-col items-center justify-center p-4">
+        <div class="bg-gray-900 border border-rose-500 p-8 rounded-xl text-center max-w-sm">
+            <h2 class="text-2xl text-rose-400 font-cyber mb-4">ACCESS DENIED</h2>
+            <p class="text-gray-300 text-sm mb-6">物理キーボードを搭載したPC端末からアクセスせよ。</p>
+            <button onclick="closeModal('mobile-warning-modal')" class="px-8 py-2 bg-gray-800 text-white font-bold rounded">UNDERSTOOD</button>
+        </div>
+    </div>
+
+    <!-- ゲーム画面 -->
+    <div id="game-screen" class="hidden flex-col h-full w-full">
+        <div class="w-full bg-gray-900 border-b border-gray-800 p-4 shadow-lg z-10">
+            <div class="flex justify-start mb-4">
+                <button onclick="returnToTop()" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-bold rounded border border-gray-600 flex items-center gap-2 hover:bg-gray-700 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                    TOPに戻る [Esc]
+                </button>
+            </div>
+            <div class="flex justify-between items-end mb-2 px-2">
+                <div class="text-yellow-200 font-bold font-cyber tracking-widest uppercase">CREATE <span id="game-score-create" class="text-sm ml-2">50.0%</span></div>
+                <div class="text-sm text-gray-500 font-cyber">WORLD STATUS</div>
+                <div class="text-purple-400 font-bold font-cyber tracking-widest uppercase"><span id="game-score-destroy" class="text-sm mr-2">50.0%</span> DESTROY</div>
+            </div>
+            <div class="w-full h-4 bg-gray-800 rounded-full overflow-hidden flex">
+                <div id="game-gauge-create" class="h-full bg-yellow-400 transition-all duration-500" style="width: 50%;"></div>
+                <div id="game-gauge-destroy" class="h-full bg-purple-500 transition-all duration-500" style="width: 50%;"></div>
+            </div>
+        </div>
+
+        <div class="flex-1 flex overflow-hidden relative">
+            <div class="w-1/4 max-w-[300px] bg-gray-900/50 border-r border-gray-800 p-4 flex flex-col hidden md:flex">
+                <div class="flex gap-1 mb-2 border-b border-gray-700 pb-2">
+                    <button id="tab-score-game" onclick="switchRankTab('score')" class="flex-1 text-[10px] font-cyber tracking-widest py-1 rounded transition-colors bg-yellow-900/60 text-yellow-300 border border-yellow-700">SCORE</button>
+                    <button id="tab-contrib-game" onclick="switchRankTab('contrib')" class="flex-1 text-[10px] font-cyber tracking-widest py-1 rounded transition-colors text-gray-500 border border-gray-700 hover:text-gray-300">CONTRIB</button>
+                </div>
+                <div id="ranking-list" class="flex-1 overflow-y-auto space-y-1 pr-2"></div>
+            </div>
+            <div class="flex-1 flex flex-col items-center justify-start pt-8 relative text-center">
+                <div class="flex justify-between w-full max-w-2xl px-4 mb-4">
+                    <div class="text-center w-32 font-cyber"><p class="text-gray-500 text-xs">SCORE</p><p id="my-score" class="text-2xl">0</p></div>
+                    <div class="text-center w-32 font-cyber"><p class="text-gray-500 text-xs">TIMER</p><p id="timer-display" class="text-4xl text-white">60</p></div>
+                    <div class="text-center w-32">
+                        <p class="text-gray-500 text-xs font-cyber">COMBO</p><p id="my-combo" class="font-cyber text-2xl text-yellow-400">0</p>
+                        <div class="w-full h-1.5 bg-gray-800 mt-1 rounded-full overflow-hidden border border-gray-700"><div id="combo-gauge" class="h-full bg-yellow-400 transition-all duration-200" style="width: 0%;"></div></div>
+                    </div>
+                </div>
+
+                <div class="h-12 flex items-end justify-center w-full max-w-2xl mb-2">
+                    <div id="bonus-msg" class="text-2xl font-bold font-cyber text-yellow-300 opacity-0 transition-all duration-500 transform translate-y-4"></div>
+                </div>
+
+                <div id="typing-box" class="w-full max-w-2xl p-8 md:p-12 rounded-xl border border-gray-700 bg-gray-900/80 transition-all duration-300 shadow-xl relative overflow-hidden title-glow">
+                    <canvas id="particle-canvas"></canvas>
+                    <p id="word-theme" class="text-xs text-gray-400 mb-2 font-bold tracking-widest uppercase"></p>
+                    <p id="kana-display" class="text-lg md:text-xl text-gray-300 mb-2 tracking-widest"></p>
+                    <h2 id="word-display" class="text-4xl md:text-5xl font-bold mb-8 tracking-wide transition-all duration-300"></h2>
+                    <div id="roman-display" class="text-3xl md:text-4xl font-cyber tracking-widest bg-black/60 p-4 md:p-6 rounded-lg inline-block break-all transition-all duration-300"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- リザルト画面 -->
+    <div id="result-screen" class="hidden absolute inset-0 flex flex-col items-center justify-start bg-black/95 z-50 backdrop-blur-md overflow-y-auto py-12 px-4">
+        <div class="flex flex-col items-center w-full max-w-4xl m-auto">
+            <h1 class="text-5xl font-cyber mb-4 tracking-wider" id="result-title">MISSION COMPLETE</h1>
+            <div class="bg-gray-900/80 border border-gray-700 p-8 rounded-xl w-full flex flex-col items-center gap-6 shadow-2xl relative">
+                <div class="w-full text-center py-6 bg-black/50 border border-gray-800 rounded-lg relative">
+                    <p class="text-gray-500 text-xs font-cyber tracking-widest mb-1">HIGHEST TITLE EARNED</p>
+                    <p id="result-earned-title" class="text-3xl md:text-4xl font-bold tracking-widest animate-pulse"></p>
+                    <p id="result-new-unlocks" class="text-cyan-400 text-xs mt-3 hidden font-bold"></p>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 w-full text-center border-b border-gray-700 pb-8 gap-4 font-cyber">
+                    <div><p class="text-gray-500 text-xs tracking-widest">RANK</p><p id="result-rank" class="text-2xl text-rose-500">1st</p></div>
+                    <div><p class="text-gray-500 text-xs tracking-widest">SCORE</p><p id="result-score" class="text-2xl text-white">0</p></div>
+                    <div><p class="text-gray-500 text-xs tracking-widest">MAX COMBO</p><p id="result-max-combo" class="text-2xl text-yellow-400">0</p></div>
+                    <div><p class="text-gray-500 text-xs tracking-widest">ACCURACY</p><p id="result-accuracy" class="text-2xl text-blue-400">0%</p></div>
+                </div>
+                <div class="w-full h-48 overflow-y-auto pr-2" id="result-log-list"></div>
+                <div class="flex gap-4">
+                    <button onclick="shareScore()" class="px-8 py-3 bg-[#1DA1F2]/20 text-[#1DA1F2] border border-[#1DA1F2]/50 font-bold rounded hover:bg-[#1DA1F2]/40 transition-colors">SHARE</button>
+                    <button onclick="returnToTop()" class="px-8 py-3 bg-gray-800 text-white font-bold rounded hover:bg-gray-700 transition-colors">TOPに戻る [Esc]</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ------------------------------------------------------------------------------------
+        // 1. 定数・設定・音量調整
+        // ------------------------------------------------------------------------------------
+        const STORAGE_KEY = 'cyber_faction_v17_final'; 
+        const SETTINGS_KEY = 'cyber_faction_settings';
+
+        // 音量調整設定 (0.0 が無音, 1.0 が最大)
+        const VOL_BGM_SYNTH  = 0.05; // 内蔵シンセBGMの音量
+        const VOL_BGM_CUSTOM = 0.2;  // 独自BGM(mp3)の音量
+        const VOL_SFX_TYPE   = 0.2; // タイピング音の音量
+        const VOL_SFX_MISS   = 0.1;  // ミス時の音量
+        const VOL_SFX_CLEAR  = 0.2;  // 単語クリア時の音量
+
+        // 外部ファイル読み込み設定
+        const WORDS_JSON_URL = "words.json"; 
+        const CUSTOM_BGM_URL = "bgm.mp3"; 
+        
+        const bgmAudioElement = new Audio();
+        bgmAudioElement.loop = true;
+        bgmAudioElement.volume = VOL_BGM_CUSTOM;
+
+        // ★修正: NPCを10人に増量 (Trinityを追加)
+        const agentNames = ["Neon_Cat", "ZeroCool", "Ghost_in_Shell", "NullPointer", "ByteMe", "SysAdmin99", "CrashOverride", "DarkMage_IT", "404_NotFound", "Trinity"];
+
+        let soundSettings = { bgm: true, sfx: true, visual: true };
+        const savedSettings = localStorage.getItem(SETTINGS_KEY);
+        if (savedSettings) { try { Object.assign(soundSettings, JSON.parse(savedSettings)); } catch(e) {} }
+
+        // ★すべての小文字入力(x, l)を網羅・徹底強化したKANA_MAP
+        const KANA_MAP = {
+            'あ':['a'], 'い':['i'], 'う':['u','wu','whu'], 'え':['e'], 'お':['o'],
+            'か':['ka','ca'], 'き':['ki'], 'く':['ku','cu','qu'], 'け':['ke'], 'こ':['ko','co'],
+            'さ':['sa'], 'し':['shi','si','ci'], 'す':['su'], 'せ':['se','ce'], 'そ':['so'],
+            'た':['ta'], 'ち':['chi','ti'], 'つ':['tsu','tu'], 'て':['te'], 'と':['to'],
+            'な':['na'], 'に':['ni'], 'ぬ':['nu'], 'ね':['ne'], 'の':['no'],
+            'は':['ha'], 'ひ':['hi'], 'ふ':['fu','hu'], 'へ':['he'], 'ほ':['ho'],
+            'ま':['ma'], 'み':['mi'], 'む':['mu'], 'め':['me'], 'も':['mo'],
+            'や':['ya'], 'ゆ':['yu'], 'よ':['yo'], 'ら':['ra'], 'り':['ri'], 'る':['ru'], 'れ':['re'], 'ろ':['ro'],
+            'わ':['wa'], 'を':['wo'], 'ん':['nn','n','xn'],
+            'が':['ga'], 'ぎ':['gi'], 'ぐ':['gu'], 'げ':['ge'], 'ご':['go'],
+            'ざ':['za'], 'じ':['ji','zi'], 'ず':['zu'], 'ぜ':['ze'], 'ぞ':['zo'],
+            'だ':['da'], 'ぢ':['di'], 'づ':['du'], 'で':['de'], 'ど':['do'],
+            'ば':['ba'], 'び':['bi'], 'ぶ':['bu'], 'べ':['be'], 'ぼ':['bo'],
+            'ぱ':['pa'], 'ぴ':['pi'], 'ぷ':['pu'], 'ぺ':['pe'], 'ぽ':['po'],
+            
+            'きゃ':['kya','kixya','kilya'], 'きゅ':['kyu','kixyu','kilyu'], 'きょ':['kyo','kixyo','kilyo'],
+            'しゃ':['sha','sya','sixya','shixya','silya','shilya'], 'しゅ':['shu','syu','sixyu','shixyu','silyu','shilyu'], 'しょ':['sho','syo','sixyo','shixyo','silyo','shilyo'],
+            'ちゃ':['cha','tya','cya','chixya','tixya','chilya','tilya'], 'ちゅ':['chu','tyu','cyu','chixyu','tixyu','chilyu','tilyu'], 'ちょ':['cho','tyo','cyo','chixyo','tixyo','chilyo','tilyo'],
+            'にゃ':['nya','nixya','nilya'], 'にゅ':['nyu','nixyu','nilyu'], 'にょ':['nyo','nixyo','nilyo'],
+            'ひゃ':['hya','hixya','hilya'], 'ひゅ':['hyu','hixyu','hilyu'], 'ひょ':['hyo','hixyo','hilyo'],
+            'みゃ':['mya','mixya','milya'], 'みゅ':['myu','mixyu','milyu'], 'みょ':['myo','mixyo','milyo'],
+            'りゃ':['rya','rixya','rilya'], 'りゅ':['ryu','rixyu','rilyu'], 'りょ':['ryo','rixyo','rilyo'],
+            'ぎゃ':['gya','gixya','gilya'], 'ぎゅ':['gyu','gixyu','gilyu'], 'ぎょ':['gyo','gixyo','gilyo'],
+            'じゃ':['ja','jya','zya','jixya','zixya','jilya','zilya'], 'じゅ':['ju','jyu','zyu','jixyu','zixyu','jilyu','zilyu'], 'じょ':['jo','jyo','zyo','jixyo','zixyo','jilyo','zilyo'],
+            'びゃ':['bya','bixya','bilya'], 'びゅ':['byu','bixyu','bilyu'], 'びょ':['byo','bixyo','bilyo'],
+            'ぴゃ':['pya','pixya','pilya'], 'ぴゅ':['pyu','pixyu','pilyu'], 'ぴょ':['pyo','pixyo','pilyo'],
+            
+            'ふぁ':['fa','fwa','fuxa','huxa','fula','hula'], 'ふぃ':['fi','fwi','fyi','fuxi','huxi','fuli','huli'], 'ふぇ':['fe','fwe','fye','fuxe','huxe','fule','hule'], 'ふぉ':['fo','fwo','fuxo','huxo','fulo','hulo'],
+            'てぃ':['thi','texi','teli'], 'でぃ':['dhi','dexi','deli'], 
+            'てぇ':['the','texe','tele'], 'でぇ':['dhe','dexe','dele'], 
+            'てゃ':['tha','texya','telya'], 'でゃ':['dha','dexya','delya'], 
+            'てゅ':['thu','texyu','telyu'], 'でゅ':['dhu','dexyu','delyu'], 
+            'てょ':['tho','texyo','telyo'], 'でょ':['dho','dexyo','delyo'], 
+            'じぇ':['je','jye','zye','jixe','zixe','jile','zile'], 'しぇ':['she','sye','sixe','shixe','sile','shile'], 'ちぇ':['che','tye','cye','chixe','tixe','chile','tile'],
+            'うぁ':['wha','uxa','whuxa','ula','whula'], 'うぃ':['wi','uxi','whuxi','uli','whuli'], 'うぇ':['we','uxe','whuxe','ule','whule'], 'うぉ':['who','uxo','whuxo','wo','ulo','whulo'],
+            'つぁ':['tsa','tsuxa','tuxa','tsula','tula'], 'つぃ':['tsi','tsuxi','tuxi','tsuli','tuli'], 'つぇ':['tse','tsuxe','tuxe','tsule','tule'], 'つぉ':['tso','tsuxo','tuxo','tsulo','tulo'],
+            'どぅ':['dwu','doxu','dolu'], 'とぅ':['twu','toxu','tolu'], 'ふゅ':['fyu','fuxyu','huxyu','fulyu','hulyu'],
+            
+            'ぁ':['la','xa'], 'ぃ':['li','xi'], 'ぅ':['lu','xu'], 'ぇ':['le','xe'], 'ぉ':['lo','xo'], 
+            'ゃ':['lya','xya'], 'ゅ':['lyu','xyu'], 'ょ':['lyo','xyo'], 'っ':['ltu','xtu'], 'ー':['-'],
+            
+            'a':['a'], 'b':['b'], 'c':['c'], 'd':['d'], 'e':['e'], 'f':['f'], 'g':['g'], 'h':['h'], 'i':['i'], 'j':['j'], 'k':['k'], 'l':['l'], 'm':['m'], 'n':['n'], 'o':['o'], 'p':['p'], 'q':['q'], 'r':['r'], 's':['s'], 't':['t'], 'u':['u'], 'v':['v'], 'w':['w'], 'x':['x'], 'y':['y'], 'z':['z']
+        };
+
+        // 称号データ (Canvas用フォールバック)
+        // ★修正：変数の衝突を避けるため、HTML側での変数名を GAME_TITLES に変更
+        const GAME_TITLES = window.TITLE_DEFINITIONS || [
+            { id: 'sc_c_1', cat: 'Score (Create)', weight: 1, title: '見習いビルダー', color: 'text-gray-400', req: '1,000pt', check: s => s.team === 'create' && s.score >= 1000, rippleColor: 'rgba(255, 255, 255, 0.2)', soundType: 'square', soundFreq: 600 },
+            { id: 'sc_c_2', cat: 'Score (Create)', weight: 2, title: '優秀なコーダー', color: 'text-green-400', req: '5,000pt', check: s => s.team === 'create' && s.score >= 5000, rippleColor: 'rgba(74, 222, 128, 0.3)', soundType: 'square', soundFreq: 800 },
+            { id: 'sc_c_3', cat: 'Score (Create)', weight: 3, title: 'リードエンジニア', color: 'text-blue-400', req: '10,000pt', check: s => s.team === 'create' && s.score >= 10000, rippleColor: 'rgba(96, 165, 250, 0.4)', soundType: 'sine', soundFreq: 1000 },
+            { id: 'sc_c_4', cat: 'Score (Create)', weight: 4, title: 'フルスタックの極み', color: 'text-cyan-400', req: '15,000pt', check: s => s.team === 'create' && s.score >= 15000, rippleColor: 'rgba(34, 211, 238, 0.5)', soundType: 'sine', soundFreq: 1200 },
+            { id: 'sc_c_5', cat: 'Score (Create)', weight: 5, title: 'マスターアーキテクト', color: 'text-indigo-400', req: '20,000pt', check: s => s.team === 'create' && s.score >= 20000, rippleColor: 'rgba(129, 140, 248, 0.6)', soundType: 'sine', soundFreq: 1400 },
+            { id: 'sc_c_6', cat: 'Score (Create)', weight: 6, title: '神速のクリエイター', color: 'text-yellow-200', req: '25,000pt', check: s => s.team === 'create' && s.score >= 25000, rippleColor: 'rgba(253, 230, 138, 0.7)', soundType: 'sine', soundFreq: 1600 },
+            { id: 'sc_c_7', cat: 'Score (Create)', weight: 7, title: '光の創造神', color: 'text-yellow-400', req: '30,000pt', check: s => s.team === 'create' && s.score >= 30000, rippleColor: 'rgba(250, 204, 21, 0.9)', soundType: 'sine', soundFreq: 2000 },
+            { id: 'sc_d_1', cat: 'Score (Destroy)', weight: 1, title: 'スクリプトキディ', color: 'text-gray-400', req: '1,000pt', check: s => s.team === 'destroy' && s.score >= 1000, rippleColor: 'rgba(156, 163, 175, 0.2)', soundType: 'square', soundFreq: 400 },
+            { id: 'sc_d_2', cat: 'Score (Destroy)', weight: 2, title: '新米クラッカー', color: 'text-orange-400', req: '5,000pt', check: s => s.team === 'destroy' && s.score >= 5000, rippleColor: 'rgba(251, 146, 60, 0.3)', soundType: 'sawtooth', soundFreq: 300 },
+            { id: 'sc_d_3', cat: 'Score (Destroy)', weight: 3, title: 'サイバーハザード', color: 'text-red-400', req: '10,000pt', check: s => s.team === 'destroy' && s.score >= 10000, rippleColor: 'rgba(248, 113, 113, 0.4)', soundType: 'sawtooth', soundFreq: 250 },
+            { id: 'sc_d_4', cat: 'Score (Destroy)', weight: 4, title: 'ブラックハットの影', color: 'text-pink-400', req: '15,000pt', check: s => s.team === 'destroy' && s.score >= 15000, rippleColor: 'rgba(244, 114, 182, 0.5)', soundType: 'sawtooth', soundFreq: 200 },
+            { id: 'sc_d_5', cat: 'Score (Destroy)', weight: 5, title: 'システムブレイカー', color: 'text-purple-400', req: '20,000pt', check: s => s.team === 'destroy' && s.score >= 20000, rippleColor: 'rgba(192, 132, 252, 0.6)', soundType: 'sawtooth', soundFreq: 150 },
+            { id: 'sc_d_6', cat: 'Score (Destroy)', weight: 6, title: '厄災のトリガー', color: 'text-rose-400', req: '25,000pt', check: s => s.team === 'destroy' && s.score >= 25000, rippleColor: 'rgba(251, 113, 133, 0.7)', soundType: 'sawtooth', soundFreq: 100 },
+            { id: 'sc_d_7', cat: 'Score (Destroy)', weight: 7, title: '深淵の破壊神', color: 'text-rose-600', req: '30,000pt', check: s => s.team === 'destroy' && s.score >= 30000, rippleColor: 'rgba(225, 29, 72, 0.9)', soundType: 'sawtooth', soundFreq: 60 }
+        ];
+
+        // 組み込み単語データ (フォールバック用)
+        let createWords = [ { word: "要件定義", kana: "ようけんていぎ", desc: "システム開発において、実装すべき機能や性能を明確にする工程。" }, { word: "アジャイル開発", kana: "あじゃいるかいはつ", desc: "短い期間で実装とテストを繰り返し、柔軟に対応する手法。" }, { word: "オブジェクト指向", kana: "おぶじぇくとしこう", desc: "データと処理を「モノ」として扱い、組み立てる考え方。" }, { word: "オープンソース", kana: "おーぷんそーす", desc: "ソースコードが無償で公開され、誰でも使用・改良できる。" }, { word: "仮想化技術", kana: "かそうかぎじゅつ", desc: "1台のサーバー上で、複数の仮想的なサーバーを動作させる技術。" } ];
+        let destroyWords = [ { word: "情報漏洩", kana: "じょうほうろうえい", desc: "機密データや個人情報が外部に流出してしまう重大なインシデント。" }, { word: "ランサムウェア", kana: "らんさむうぇあ", desc: "データを暗号化して人質に取り、身代金を要求するウイルス。" }, { word: "ゼロデイ攻撃", kana: "ぜろでいこうげき", desc: "ソフトウェアの脆弱性が発見され、修正される前に行われる攻撃。" }, { word: "ブルートフォース攻撃", kana: "ぶるーとふぉーすこうげき", desc: "パスワードの組み合わせを総当たりで試し、強引に解読する手法。" }, { word: "踏み台攻撃", kana: "ふみだいこうげき", desc: "第三者のPCを乗っ取り、そこから別の標的へ攻撃を仕掛けること。" } ];
+
+        async function loadWordsData() {
+            if (!WORDS_JSON_URL) return;
+            try {
+                const currentProtocol = window.location.protocol;
+                if ((currentProtocol === 'blob:' || currentProtocol === 'data:' || currentProtocol === 'file:') && !WORDS_JSON_URL.startsWith('http')) {
+                    console.log("ローカル環境またはプレビュー環境のため、外部JSONの読み込みをスキップし内蔵データを使用します。");
+                    return;
+                }
+                const response = await fetch(WORDS_JSON_URL);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.createWords) createWords = data.createWords;
+                    if (data.destroyWords) destroyWords = data.destroyWords;
+                }
+            } catch(e) {
+                console.log("外部JSONの読み込みに失敗したため、内蔵データを使用します。");
+            }
+        }
+
+        // ------------------------------------------------------------------------------------
+        // 2. エンジン (TypeEngine)
+        // ------------------------------------------------------------------------------------
+        class TypeEngine {
+            constructor(kana) { this.tokens = this.tokenize(kana); this.tokenIndex = 0; this.currentInput = ""; this.typedStr = ""; }
+            tokenize(kana) {
+                let tokens = []; let i = 0;
+                while (i < kana.length) {
+                    let two = kana.substr(i, 2); let one = kana.substr(i, 1);
+                    if (KANA_MAP[two]) { tokens.push({ char: two, patterns: [...KANA_MAP[two]] }); i += 2; }
+                    else if (KANA_MAP[one]) { tokens.push({ char: one, patterns: [...KANA_MAP[one]] }); i += 1; }
+                    else { tokens.push({ char: one, patterns: [one] }); i += 1; }
+                }
+                for (let j = 0; j < tokens.length - 1; j++) {
+                    if (tokens[j].char === 'っ') tokens[j+1].patterns.forEach(p => { if (!['a','i','u','e','o','n','-'].includes(p[0])) tokens[j].patterns.push(p[0]); });
+                    if (tokens[j].char === 'ん' && tokens[j+1].patterns.some(p => ['a','i','u','e','o','n','y'].includes(p[0]))) tokens[j].patterns = ['nn', 'xn'];
+                }
+                return tokens;
+            }
+            getDisplayString() {
+                let roman = "";
+                for (let i = this.tokenIndex; i < this.tokens.length; i++) {
+                    let p = this.tokens[i].patterns[0];
+                    if (this.tokens[i].char === 'っ' && i < this.tokens.length - 1) { const nx = this.tokens[i+1].patterns[0][0]; if (this.tokens[i].patterns.includes(nx)) p = nx; }
+                    if (this.tokens[i].char === 'ん' && this.tokens[i].patterns.includes('n')) p = 'n';
+                    if (i === this.tokenIndex) { let m = this.tokens[i].patterns.find(x => x.startsWith(this.currentInput)); roman += (m ? m.substring(this.currentInput.length) : p); }
+                    else roman += p;
+                }
+                return [this.typedStr, roman];
+            }
+            input(key) {
+                if (this.isFinished()) return false;
+                const token = this.tokens[this.tokenIndex]; const nextIn = this.currentInput + key;
+                const matched = token.patterns.filter(p => p.startsWith(nextIn));
+                if (matched.length > 0) {
+                    this.currentInput = nextIn; this.typedStr += key;
+                    if (matched.some(p => p === nextIn) && !matched.some(p => p.length > nextIn.length)) { this.tokenIndex++; this.currentInput = ""; }
+                    return true;
+                }
+                if (token.char === 'ん' && this.currentInput === 'n' && this.tokenIndex + 1 < this.tokens.length) {
+                    const nextM = this.tokens[this.tokenIndex + 1].patterns.filter(p => p.startsWith(key));
+                    if (nextM.length > 0) {
+                        this.tokenIndex++; this.currentInput = key; this.typedStr += key;
+                        if (nextM.some(p => p === key) && !nextM.some(p => p.length > key.length)) { this.tokenIndex++; this.currentInput = ""; }
+                        return true;
+                    }
+                }
+                return false;
+            }
+            isFinished() { return this.tokenIndex >= this.tokens.length; }
+        }
+
+        class MultiTypeEngine {
+            constructor(kana) { this.engines = (Array.isArray(kana) ? kana : [kana]).map(k => new TypeEngine(k.toLowerCase())); this.active = [...this.engines]; }
+            getDisplayString() { return this.active[0].getDisplayString(); }
+            input(key) {
+                let matched = false; let nextA = [];
+                for (let e of this.active) { if (e.input(key)) { matched = true; nextA.push(e); } }
+                if (matched) { this.active = nextA; return true; } return false;
+            }
+            isFinished() { return this.active.some(e => e.isFinished()); }
+        }
+
+        function getEquippedParams() {
+            let p = { color: 'rgba(255,255,255,0.3)', type: 'square', freq: 800, glowColor: null, particleEffect: 'sparks' };
+            if (playerData.equippedTitle) {
+                const eq = GAME_TITLES.find(t => t.id === playerData.equippedTitle);
+                if (eq) {
+                    p.color          = eq.rippleColor     || p.color;
+                    p.type           = eq.soundType       || p.type;
+                    p.freq           = eq.soundFreq       || p.freq;
+                    p.glowColor      = eq.glowColor       || null;
+                    p.particleEffect = eq.particleEffect  || 'sparks';
+                }
+            }
+            return p;
+        }
+
+        // セット中称号のグロー効果をタイピングボックスに適用
+        function applyTitleGlow() {
+            const tb = document.getElementById('typing-box');
+            if (!tb) return;
+            const p = getEquippedParams();
+            if (p.glowColor && soundSettings.visual) {
+                tb.style.boxShadow    = `0 0 18px ${p.glowColor}55, inset 0 0 8px ${p.glowColor}22`;
+                tb.style.borderColor  = p.glowColor + '88';
+            } else {
+                tb.style.boxShadow   = '';
+                tb.style.borderColor = '';
+            }
+        }
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let bgmOsc1 = null, bgmOsc2 = null, bgmGain = null, lfo = null;
+        let audioInitialized = false;
+
+        function initAudio() {
+            if (audioInitialized) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            startBGM(); audioInitialized = true;
+        }
+        document.addEventListener('click', initAudio, { once: true });
+        document.addEventListener('keydown', initAudio, { once: true });
+
+        function startBGM() {
+            if (!soundSettings.bgm) return;
+            if (CUSTOM_BGM_URL) {
+                try {
+                    let urlStr = CUSTOM_BGM_URL;
+                    const currentProtocol = window.location.protocol;
+                    if ((currentProtocol === 'blob:' || currentProtocol === 'data:' || currentProtocol === 'file:') && !CUSTOM_BGM_URL.startsWith('http')) {
+                        console.log("ローカル環境またはプレビュー環境のためカスタムBGMの読み込みをスキップします。");
+                        return; 
+                    }
+                    else urlStr = new URL(CUSTOM_BGM_URL, window.location.href).href;
+                    if (bgmAudioElement.src !== urlStr) bgmAudioElement.src = urlStr;
+                    bgmAudioElement.play().catch(e => console.log("BGM Play Error:", e));
+                } catch (e) {}
+                return;
+            }
+            if (bgmOsc1) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            bgmOsc1 = audioCtx.createOscillator(); bgmOsc2 = audioCtx.createOscillator(); bgmGain = audioCtx.createGain();
+            bgmOsc1.type = 'sawtooth'; bgmOsc2.type = 'square';
+            bgmOsc1.frequency.value = 55; bgmOsc2.frequency.value = 55.5; 
+            bgmGain.gain.value = VOL_BGM_SYNTH;
+            lfo = audioCtx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 2; 
+            const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 500; lfo.connect(lfoGain);
+            const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 800;
+            lfoGain.connect(filter.frequency);
+            bgmOsc1.connect(filter); bgmOsc2.connect(filter); filter.connect(bgmGain); bgmGain.connect(audioCtx.destination);
+            bgmOsc1.start(); bgmOsc2.start(); lfo.start();
+            updateBGMPitch();
+        }
+
+        function stopBGM() {
+            if (CUSTOM_BGM_URL) { try { bgmAudioElement.pause(); } catch(e) {} return; }
+            if (bgmOsc1) {
+                bgmGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+                setTimeout(() => { if (bgmOsc1) { bgmOsc1.stop(); bgmOsc2.stop(); lfo.stop(); bgmOsc1.disconnect(); bgmOsc2.disconnect(); bgmOsc1 = null; bgmOsc2 = null; bgmGain = null; } }, 500);
+            }
+        }
+
+        function updateBGMPitch() {
+            if (CUSTOM_BGM_URL) { try { bgmAudioElement.playbackRate = isGameActive ? 1.1 : 1.0; } catch(e) {} return; }
+            if (!soundSettings.bgm || !bgmOsc1) return;
+            const targetFreq = isGameActive ? 110 : 55;
+            bgmOsc1.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.5);
+            bgmOsc2.frequency.setTargetAtTime(targetFreq + 0.5, audioCtx.currentTime, 0.5);
+            lfo.frequency.setTargetAtTime(isGameActive ? 4 : 2, audioCtx.currentTime, 0.5);
+        }
+
+        function playSound(type) {
+            if (!soundSettings.sfx) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator(); const gainNode = audioCtx.createGain();
+            osc.connect(gainNode); gainNode.connect(audioCtx.destination);
+            
+            const p = getEquippedParams();
+            const now = audioCtx.currentTime;
+
+            if (type === 'type') {
+                osc.type = p.type; osc.frequency.setValueAtTime(p.freq, now); osc.frequency.exponentialRampToValueAtTime(p.freq/4, now + 0.05);
+                gainNode.gain.setValueAtTime(VOL_SFX_TYPE, now); gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+                osc.start(now); osc.stop(now + 0.05);
+            } else if (type === 'miss') {
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, now);
+                gainNode.gain.setValueAtTime(VOL_SFX_MISS, now); gainNode.gain.linearRampToValueAtTime(0, now + 0.2);
+                osc.start(now); osc.stop(now + 0.2);
+            } else if (type === 'clear') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(p.freq/2, now); osc.frequency.setValueAtTime(p.freq, now + 0.1);
+                gainNode.gain.setValueAtTime(VOL_SFX_CLEAR, now); gainNode.gain.linearRampToValueAtTime(0, now + 0.3);
+                osc.start(now); osc.stop(now + 0.3);
+            }
+        }
+
+        function toggleBGM() { soundSettings.bgm = !soundSettings.bgm; localStorage.setItem(SETTINGS_KEY, JSON.stringify(soundSettings)); if (soundSettings.bgm) { if (audioInitialized) startBGM(); } else { stopBGM(); } updateSettingsUI(); }
+        function toggleSFX() { soundSettings.sfx = !soundSettings.sfx; localStorage.setItem(SETTINGS_KEY, JSON.stringify(soundSettings)); updateSettingsUI(); }
+        function toggleVisual() {
+            soundSettings.visual = !soundSettings.visual;
+            localStorage.setItem(SETTINGS_KEY, JSON.stringify(soundSettings));
+            if (!soundSettings.visual) {
+                // オフ時: 背景・グロー・パーティクルをすべてリセット
+                document.body.className = document.body.className.replace(/world-\S+/g, '').trim();
+                document.getElementById('world-bg-overlay').style.opacity = '0';
+                document.getElementById('glitch-overlay').style.opacity = '0';
+                applyTitleGlow();
+            } else {
+                updateWorldBg();
+                applyTitleGlow();
+            }
+            updateSettingsUI();
+        }
+        function updateSettingsUI() {
+            const b = document.getElementById('btn-toggle-bgm');
+            const s = document.getElementById('btn-toggle-sfx');
+            const v = document.getElementById('btn-toggle-visual');
+            const on  = "px-4 py-1 font-bold rounded text-sm transition-colors bg-cyan-700 text-white";
+            const off = "px-4 py-1 font-bold rounded text-sm transition-colors bg-gray-600 text-gray-300";
+            if(b){ b.textContent = soundSettings.bgm  ? "ON":"OFF"; b.className = soundSettings.bgm  ? on:off; }
+            if(s){ s.textContent = soundSettings.sfx  ? "ON":"OFF"; s.className = soundSettings.sfx  ? on:off; }
+            if(v){ v.textContent = soundSettings.visual? "ON":"OFF"; v.className = soundSettings.visual? on:off; }
+        }
+
+        // ------------------------------------------------------------------------------------
+        // 3. 状態管理 & DOM
+        // ------------------------------------------------------------------------------------
+        let playerData = { name: "GUEST", faction: null, currency: 0, unlocked: [], words: [], totalContribution: 0, history: [], equippedTitle: null, playCount: 0, bestCreate: 0, bestDestroy: 0 };
+        let currentTeam = null, currentWordObj = null;
+        let myScore = 0, combo = 0, maxCombo = 0, timeLeft = 60, timerInterval = null, isGameActive = false;
+        let totalTyped = 0, totalMissed = 0, wordMissed = 0, typeEngine = null, playedWordsLog = [];
+        let globalPoints = { create: 500000, destroy: 500000 };
+        let rankings = [];
+        let availableWords = { create: [], destroy: [] };
+        const antiCheat = { lastTypeTime: 0, strikes: 0 };
+
+        function loadCollection() {
+            let saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) { try { playerData = Object.assign(playerData, JSON.parse(saved)); } catch(e) {} }
+            // プレイヤーIDが未発行なら生成（Supabase移行後はUUIDに変わる）
+            if (!playerData.id) {
+                playerData.id = 'agent_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(playerData));
+            }
+            // 既存プレイヤーならDBに同期
+            if (playerData.faction) {
+                const myHighScore = playerData.history && playerData.history.length > 0
+                    ? Math.max(...playerData.history.map(h => h.score)) : 0;
+                DB.savePlayer({ ...playerData, highScore: myHighScore });
+            }
+            document.getElementById('title-progress').textContent = `(${playerData.unlocked.length}/${GAME_TITLES.length})`;
+            document.getElementById('start-total-contrib').textContent = (playerData.totalContribution || 0).toLocaleString();
+            updateSettingsUI();
+            return playerData;
+        }
+
+        function saveCollection() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(playerData));
+            document.getElementById('title-progress').textContent = `(${playerData.unlocked.length}/${GAME_TITLES.length})`;
+            // DBにも同期（陣営が確定しているプレイヤーのみ）
+            if (playerData.id && playerData.faction) {
+                const myHighScore = playerData.history && playerData.history.length > 0
+                    ? Math.max(...playerData.history.map(h => h.score)) : 0;
+                DB.savePlayer({ ...playerData, highScore: myHighScore });
+            }
+        }
+
+        function renderTopPanel() {
+            const pu = document.getElementById('panel-unassigned'); const pa = document.getElementById('panel-assigned');
+            if (!playerData.faction) { pu.classList.remove('hidden'); pa.classList.add('hidden'); pa.classList.remove('flex'); } 
+            else {
+                pu.classList.add('hidden'); pa.classList.remove('hidden'); pa.classList.add('flex');
+                document.getElementById('assigned-name').textContent = playerData.name;
+                document.getElementById('assigned-currency').innerHTML = `${playerData.currency.toLocaleString()} <span class="text-sm text-gray-500">pt</span>`;
+                document.getElementById('assigned-total-contrib-panel').textContent = playerData.totalContribution.toLocaleString();
+                
+                const badge = document.getElementById('assigned-faction-badge');
+                const btnStart = document.getElementById('btn-mission-start');
+                const bgGlow = document.getElementById('assigned-bg-glow');
+                if (playerData.faction === 'create') {
+                    badge.textContent = "CREATE TEAM"; badge.className = "px-2 py-0.5 rounded text-[10px] font-bold tracking-widest border border-yellow-500 text-yellow-200 bg-yellow-900/30";
+                    btnStart.className = "w-full py-6 rounded-lg text-4xl font-bold font-cyber tracking-widest transition-all duration-300 shadow-[0_0_15px_rgba(254,240,138,0.3)] bg-yellow-900/50 hover:bg-yellow-800 text-yellow-200 border border-yellow-500 hover:scale-[1.02] flex flex-col items-center";
+                    bgGlow.className = "absolute -top-20 -right-20 w-64 h-64 rounded-full blur-3xl opacity-20 pointer-events-none bg-yellow-400";
+                } else {
+                    badge.textContent = "DESTROY TEAM"; badge.className = "px-2 py-0.5 rounded text-[10px] font-bold tracking-widest border border-purple-500 text-purple-400 bg-purple-900/30";
+                    btnStart.className = "w-full py-6 rounded-lg text-4xl font-bold font-cyber tracking-widest transition-all duration-300 shadow-[0_0_15px_rgba(168,85,247,0.3)] bg-purple-900/50 hover:bg-purple-800 text-purple-400 border border-purple-500 hover:scale-[1.02] flex flex-col items-center";
+                    bgGlow.className = "absolute -top-20 -right-20 w-64 h-64 rounded-full blur-3xl opacity-20 pointer-events-none bg-purple-500";
+                }
+
+                const titleBadge = document.getElementById('assigned-title-badge');
+                if (playerData.equippedTitle) {
+                    const eq = GAME_TITLES.find(t => t.id === playerData.equippedTitle);
+                    if (eq) { titleBadge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>${eq.title}`; titleBadge.className = `px-2 py-0.5 rounded text-[10px] font-bold tracking-widest border border-gray-400 cursor-pointer flex items-center gap-1 ${eq.color} bg-gray-800`; }
+                } else {
+                    titleBadge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>NO TITLE (クリックで装備)`; titleBadge.className = `px-2 py-0.5 rounded text-[10px] font-bold tracking-widest border border-gray-600 text-gray-500 hover:text-white transition-colors cursor-pointer flex items-center gap-1`;
+                }
+            }
+        }
+
+        function openHowToModal() {
+            document.getElementById('howto-modal').classList.remove('hidden');
+            document.getElementById('howto-modal').classList.add('flex');
+        }
+
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); document.getElementById(id).classList.remove('flex'); }
+
+        function joinFaction(team) { playerData.name = document.getElementById('player-name-input').value.trim() || "GUEST_AGENT"; playerData.faction = team; saveCollection(); renderTopPanel(); }
+
+        function openTransferModal() {
+            const target = playerData.faction === 'create' ? 'destroy' : 'create';
+            const total = globalPoints.create + globalPoints.destroy; const targetPct = (globalPoints[target] / total) * 100;
+            let cost = 100000, reason = "拮抗状態。標準移籍コスト。";
+            if (targetPct >= 55) { cost = 200000; reason = "対象陣営が優勢なため超割高です。"; } else if (targetPct <= 45) { cost = 10000; reason = "対象陣営が劣勢なため割引されます！"; }
+            document.getElementById('transfer-cost-display').textContent = cost.toLocaleString() + " pt"; document.getElementById('transfer-cost-reason').textContent = reason; document.getElementById('transfer-current-pts').textContent = playerData.currency.toLocaleString() + " pt";
+            document.getElementById('btn-execute-transfer').disabled = (playerData.currency < cost); document.getElementById('transfer-error-msg').style.display = (playerData.currency < cost) ? 'block' : 'none';
+            document.getElementById('transfer-modal').classList.remove('hidden'); document.getElementById('transfer-modal').classList.add('flex');
+        }
+        function executeTransfer() {
+            const target = playerData.faction === 'create' ? 'destroy' : 'create';
+            const cost = parseInt(document.getElementById('transfer-cost-display').textContent.replace(/[^0-9]/g, ''));
+            if (playerData.currency >= cost) {
+                playerData.currency -= cost; playerData.faction = target; saveCollection(); closeModal('transfer-modal'); renderTopPanel();
+                document.getElementById('flash-overlay').style.backgroundColor = "rgba(255,255,255,0.8)"; setTimeout(() => document.getElementById('flash-overlay').style.backgroundColor = "transparent", 500);
+            }
+        }
+        function openRenameModal() {
+            document.getElementById('new-name-input').value = playerData.name; document.getElementById('rename-current-pts').textContent = playerData.currency.toLocaleString() + " pt";
+            document.getElementById('btn-execute-rename').disabled = (playerData.currency < 50000); document.getElementById('rename-error-msg').style.display = (playerData.currency < 50000) ? 'block' : 'none';
+            document.getElementById('rename-modal').classList.remove('hidden'); document.getElementById('rename-modal').classList.add('flex');
+        }
+        function executeRename() {
+            if (playerData.currency >= 50000) {
+                playerData.currency -= 50000; playerData.name = document.getElementById('new-name-input').value.trim() || "GUEST_AGENT";
+                saveCollection(); closeModal('rename-modal'); renderTopPanel();
+                document.getElementById('flash-overlay').style.backgroundColor = "rgba(6, 182, 212, 0.5)"; setTimeout(() => document.getElementById('flash-overlay').style.backgroundColor = "transparent", 300);
+            }
+        }
+        function openSettingsModal() { document.getElementById('settings-modal').classList.remove('hidden'); document.getElementById('settings-modal').classList.add('flex'); }
+
+        function openEquipModal() { openCollectionModal(); }
+        function equipTitle(id) {
+            playerData.equippedTitle = id; saveCollection(); renderTopPanel();
+            closeModal('collection-modal');
+            playSound('clear');
+            applyTitleGlow();
+            // 装備直後にパーティクルをプレビュー表示
+            const eq = GAME_TITLES.find(t => t.id === id);
+            if (eq && eq.particleEffect && soundSettings.visual) {
+                startParticles(eq.particleEffect);
+                setTimeout(stopParticles, 3000);
+            }
+        }
+        function openCollectionModal() {
+            const listEl = document.getElementById('collection-list'); listEl.innerHTML = '';
+            const unlocked = playerData.unlocked || [];
+            const cats = [
+                { n: 'SCORE (CREATE)',  k: 'Score (Create)'  },
+                { n: 'SCORE (DESTROY)', k: 'Score (Destroy)' },
+                { n: 'ACCURACY',        k: 'Accuracy'        },
+                { n: 'RANKING',         k: 'Rank'            },
+                { n: 'WORDS',           k: 'Collection'      },
+                { n: 'PLAY COUNT',      k: 'PlayCount'       },
+                { n: 'DUAL TEAM',       k: 'DualTeam'        },
+                { n: 'SPECIAL',         k: 'Special'         },
+                { n: 'FACTION',         k: 'Faction'         },
+                { n: 'CONTRIBUTION',    k: 'Contribution'    },
+                { n: 'SECRET',          k: 'Secret'          },
+            ];
+            cats.forEach(c => {
+                const titles = GAME_TITLES.filter(t => t.cat === c.k); if(titles.length === 0) return;
+                let html = `<h3 class="font-cyber tracking-widest border-b border-gray-600 pb-2 mb-4 mt-6 text-gray-300">■ ${c.n}</h3><div class="grid grid-cols-1 md:grid-cols-2 gap-4">`;
+                titles.forEach(t => {
+                    if (unlocked.includes(t.id)) {
+                        const isEq = playerData.equippedTitle === t.id;
+                        html += `<div onclick="equipTitle('${t.id}')" class="cursor-pointer border ${isEq?'border-cyan-400 bg-gray-800 shadow-[0_0_10px_#22d3ee]':'border-gray-600 bg-gray-800/80'} p-4 rounded hover:bg-gray-700 transition-colors relative">
+                            ${isEq?'<span class="absolute top-2 right-2 text-cyan-400 text-xs font-bold border border-cyan-400 px-1 rounded">EQUIPPED</span>':''}
+                            ${t.secret?'<span class="absolute top-2 left-2 text-amber-400 text-[10px] font-bold border border-amber-400 px-1 rounded">SECRET</span>':''}
+                            <p class="${t.color} font-bold text-xl mb-1">${t.title}</p>
+                            <p class="text-xs text-gray-400">条件: ${t.secret ? '（隠し称号）' : t.req}</p></div>`;
+                    } else {
+                        // シークレットは名前も隠す
+                        if (t.secret) {
+                            html += `<div class="border border-amber-900/40 bg-gray-900/50 p-4 rounded flex flex-col justify-center items-center text-center h-24"><p class="text-amber-900 font-cyber tracking-widest text-sm">SECRET</p><p class="text-amber-900/50 text-xs mt-1">条件: ???</p></div>`;
+                        } else {
+                            html += `<div class="border border-gray-700 bg-gray-900/50 p-4 rounded opacity-50 flex flex-col justify-center items-center text-center h-24"><p class="text-gray-500 font-cyber tracking-widest text-lg">???</p><p class="text-xs text-gray-600 mt-1">条件: ${t.req}</p></div>`;
+                        }
+                    }
+                });
+                listEl.innerHTML += html + `</div>`;
+            });
+            document.getElementById('collection-modal').classList.remove('hidden'); document.getElementById('collection-modal').classList.add('flex');
+        }
+
+        function openHistoryModal() {
+            const listEl = document.getElementById('history-list'); listEl.innerHTML = '';
+            if (playerData.history.length === 0) listEl.innerHTML = '<p class="text-gray-500 text-center mt-10">プレイ記録がありません</p>';
+            else {
+                playerData.history.forEach(r => {
+                    const c = r.team === 'create' ? 'text-yellow-200' : 'text-purple-400';
+                    const n = r.team === 'create' ? 'CREATE' : 'DESTROY';
+                    listEl.innerHTML += `<div class="border border-gray-700 bg-gray-800/50 p-4 rounded flex flex-col md:flex-row justify-between items-center gap-4 text-sm font-cyber"><div class="w-1/4"><span class="text-[10px] text-gray-500 block">${r.date}</span><span class="${c} font-bold text-lg">${n}</span></div><div class="flex justify-around w-full md:w-1/2 text-center border-y md:border-y-0 md:border-x border-gray-700 py-2"><div class="w-1/3"><p class="text-gray-500 text-[10px] tracking-widest">SCORE</p><p class="font-cyber text-2xl text-white">${r.score.toLocaleString()}</p></div><div class="w-1/3"><p class="text-gray-500 text-[10px] tracking-widest">ACCURACY</p><p class="font-cyber text-2xl text-blue-300">${r.accuracy}%</p></div><div class="w-1/3"><p class="text-gray-500 text-[10px] tracking-widest">RANK</p><p class="font-cyber text-2xl text-red-400">${r.rank}</p></div></div><div class="w-full md:w-1/4 text-center"><p class="text-gray-500 text-[10px] mb-1 tracking-widest">HIGHEST TITLE</p><p class="text-sm font-bold text-gray-200 font-sans">${r.title}</p></div></div>`;
+                });
+            }
+            document.getElementById('history-modal').classList.remove('hidden'); document.getElementById('history-modal').classList.add('flex');
+        }
+
+        function isTouchDevice() { return (('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0)); }
+
+        // ------------------------------------------------------------------------------------
+        // 6. ゲームエンジン
+        // ------------------------------------------------------------------------------------
+        function startGame() {
+            if (isTouchDevice()) {
+                document.getElementById('mobile-warning-modal').classList.remove('hidden');
+                document.getElementById('mobile-warning-modal').classList.add('flex');
+                return;
+            }
+            if (!playerData.faction) return; currentTeam = playerData.faction;
+            
+            isGameActive = true; timeLeft = 60; totalTyped = 0; totalMissed = 0; myScore = 0; combo = 0; maxCombo = 0; playedWordsLog = []; currentEarnedTitle = null;
+            antiCheat.lastTypeTime = Date.now(); antiCheat.strikes = 0;
+
+            const me = rankings.find(r => r.isMe);
+            if (me) { me.name = playerData.name; me.team = currentTeam; me.score = 0; }
+            renderRanking();
+
+            document.getElementById('start-screen').classList.add('hidden'); document.getElementById('result-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden'); document.getElementById('game-screen').classList.add('flex');
+            
+            const tb = document.getElementById('typing-box'); const wd = document.getElementById('word-display');
+            if(currentTeam === 'create') { tb.className = "w-full max-w-2xl p-8 md:p-12 rounded-xl border bg-gray-900/80 transition-all duration-300 shadow-xl relative overflow-hidden neon-border-create"; wd.className = "text-4xl md:text-5xl font-bold mb-8 tracking-wide transition-all duration-300 text-yellow-200"; }
+            else { tb.className = "w-full max-w-2xl p-8 md:p-12 rounded-xl border bg-gray-900/80 transition-all duration-300 shadow-xl relative overflow-hidden neon-border-destroy"; wd.className = "text-4xl md:text-5xl font-bold mb-8 tracking-wide transition-all duration-300 text-purple-400"; }
+            
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            availableWords = { create: [...createWords], destroy: [...destroyWords] };
+
+            setNextWord(); updateStatusUI(); updateBGMPitch();
+            document.getElementById('timer-display').textContent = timeLeft; document.getElementById('timer-display').classList.remove('text-rose-500', 'animate-pulse');
+            timerInterval = setInterval(() => { timeLeft--; document.getElementById('timer-display').textContent = timeLeft; if (timeLeft <= 10) document.getElementById('timer-display').classList.add('text-rose-500', 'animate-pulse'); if (timeLeft <= 0) endGame(); }, 1000);
+
+            // 称号グローとパーティクル開始
+            applyTitleGlow();
+            const eq = playerData.equippedTitle ? GAME_TITLES.find(t=>t.id===playerData.equippedTitle) : null;
+            if (eq && eq.particleEffect) startParticles(eq.particleEffect);
+        }
+
+        function returnToTop() {
+            isGameActive = false; clearInterval(timerInterval);
+            stopParticles();
+
+            let myHighScore = 0;
+            if (playerData.history && playerData.history.length > 0) myHighScore = Math.max(...playerData.history.map(h => h.score));
+            const me = rankings.find(r => r.isMe);
+            if (me) me.score = myHighScore;
+
+            document.getElementById('game-screen').classList.add('hidden'); document.getElementById('game-screen').classList.remove('flex');
+            document.getElementById('result-screen').classList.add('hidden'); document.getElementById('result-screen').classList.remove('flex');
+            document.getElementById('start-screen').classList.remove('hidden');
+            loadCollection(); renderTopPanel(); renderRanking(); updateBGMPitch();
+        }
+
+        function setNextWord() {
+            let list = availableWords[currentTeam];
+            if (list.length === 0) { availableWords[currentTeam] = [...(currentTeam === 'create' ? createWords : destroyWords)]; list = availableWords[currentTeam]; }
+            let rIdx = Math.floor(Math.random() * list.length);
+            if (currentWordObj && list[rIdx].word === currentWordObj.word && list.length > 1) rIdx = (rIdx + 1) % list.length;
+            currentWordObj = list[rIdx]; list.splice(rIdx, 1); 
+            
+            typeEngine = new MultiTypeEngine(currentWordObj.kana); wordMissed = 0; 
+            document.getElementById('word-theme').textContent = currentTeam === 'create' ? '[ SYSTEM BUILD ]' : '[ SYSTEM CRASH ]';
+            document.getElementById('kana-display').textContent = Array.isArray(currentWordObj.kana) ? currentWordObj.kana[0] : currentWordObj.kana;
+            
+            const wLen = currentWordObj.word.length; const wDisp = document.getElementById('word-display');
+            wDisp.className = "font-bold mb-8 tracking-wide transition-all duration-300 " + (currentTeam==='create'?'text-yellow-200':'text-purple-400');
+            if (wLen <= 7) wDisp.classList.add("text-4xl", "md:text-5xl"); else if (wLen <= 12) wDisp.classList.add("text-3xl", "md:text-4xl"); else wDisp.classList.add("text-2xl", "md:text-3xl");
+            wDisp.textContent = currentWordObj.word;
+            
+            renderRoman(); document.getElementById('typing-box').classList.remove('awaken-create', 'awaken-destroy'); checkAwakenEffect();
+        }
+
+        function renderRoman() {
+            const [typed, untyped] = typeEngine.getDisplayString();
+            const tLen = typed.length + untyped.length; const rDisp = document.getElementById('roman-display');
+            rDisp.className = "font-cyber tracking-widest bg-black/60 p-4 md:p-6 rounded-lg inline-block break-all transition-all duration-300";
+            if (tLen <= 15) rDisp.classList.add("text-3xl", "md:text-4xl"); else if (tLen <= 22) rDisp.classList.add("text-2xl", "md:text-3xl"); else rDisp.classList.add("text-xl", "md:text-2xl");
+            rDisp.innerHTML = `<span class="typed-char">${typed}</span><span class="current-char ${currentTeam === 'create' ? 'text-yellow-100' : 'text-purple-300'}">${untyped[0]||''}</span><span class="untyped-char">${untyped.substring(1)}</span>`;
+        }
+
+        document.addEventListener('keydown', (e) => {
+            const modals = ['transfer-modal', 'rename-modal', 'collection-modal', 'history-modal', 'settings-modal', 'mobile-warning-modal'];
+            const isModalOpen = modals.some(id => !document.getElementById(id).classList.contains('hidden'));
+
+            if (!isGameActive && e.code === 'Space') {
+                if (isModalOpen) return;
+                if (playerData.faction) { e.preventDefault(); startGame(); return; } 
+            }
+            if ((isGameActive || !document.getElementById('result-screen').classList.contains('hidden')) && e.code === 'Escape') { e.preventDefault(); returnToTop(); return; }
+            
+            if (!isGameActive || isModalOpen || e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1 || e.code === 'Space') return;
+            if (!e.isTrusted) { endGame("SECURITY BREACH: 自動入力を検知。"); return; }
+            const now = Date.now(); if (now - antiCheat.lastTypeTime < 15) { antiCheat.strikes++; if (antiCheat.strikes > 5) { endGame("SECURITY BREACH: 異常な入力速度。"); return; } } else antiCheat.strikes = Math.max(0, antiCheat.strikes - 1);
+            antiCheat.lastTypeTime = now; totalTyped++;
+            
+            if (typeEngine.input(e.key.toLowerCase())) {
+                addScore(10); combo++; if (combo > maxCombo) maxCombo = combo;
+                playSound('type'); createRipple();
+                renderRoman(); if (typeEngine.isFinished()) completeWord();
+            } else {
+                totalMissed++; wordMissed++; combo = 0; playSound('miss'); updateStatusUI(); showMissEffect();
+            }
+        });
+
+        function createRipple() {
+            const tb = document.getElementById('typing-box'); const ripple = document.createElement('div');
+            const p = getEquippedParams(); ripple.className = 'ripple'; ripple.style.backgroundColor = p.color;
+            ripple.style.width = ripple.style.height = '100px'; ripple.style.left = (Math.random() * tb.offsetWidth - 50) + 'px'; ripple.style.top = (Math.random() * tb.offsetHeight - 50) + 'px';
+            tb.appendChild(ripple); setTimeout(() => ripple.remove(), 400);
+        }
+
+        function completeWord() {
+            if (wordMissed === 0) { addScore(200); timeLeft = Math.min(timeLeft + 1, 60); showBonusEffect("PERFECT! +1 SEC"); playSound('clear'); } else { addScore(100); }
+            if (!playedWordsLog.find(w => w.word === currentWordObj.word)) {
+                const isNewWord = !(playerData.words || []).includes(currentWordObj.word);
+                playedWordsLog.push({ ...currentWordObj, isNew: isNewWord });
+            }
+            setNextWord();
+        }
+
+        function showBonusEffect(text) {
+            const b = document.getElementById('bonus-msg'); b.textContent = text; b.classList.replace('opacity-0', 'opacity-100'); b.classList.replace('translate-y-4', '-translate-y-4');
+            const t = document.getElementById('timer-display'); t.classList.add('text-yellow-300'); t.textContent = timeLeft;
+            setTimeout(() => { b.classList.replace('opacity-100', 'opacity-0'); b.classList.replace('-translate-y-4', 'translate-y-4'); t.classList.remove('text-yellow-300'); }, 1000);
+        }
+
+        function addScore(points) { 
+            const earned = Math.floor(points * (1 + Math.min(combo * 0.05, 1.0)));
+            myScore += earned;
+            
+            if (currentTeam === 'create') globalPoints.create += earned;
+            else if (currentTeam === 'destroy') globalPoints.destroy += earned;
+            updateGauge();
+
+            const me = rankings.find(r => r.isMe);
+            if (me) me.score = myScore;
+
+            updateStatusUI(); 
+            renderRanking();
+        }
+
+        function showMissEffect() {
+            const o = document.getElementById('flash-overlay'); o.classList.add('miss-flash');
+            const tb = document.getElementById('typing-box'); tb.style.transform = "translateX(-10px)";
+            setTimeout(() => tb.style.transform = "translateX(10px)", 50); setTimeout(() => tb.style.transform = "translateX(-5px)", 100);
+            setTimeout(() => tb.style.transform = "translateX(0)", 150); setTimeout(() => o.classList.remove('miss-flash'), 300);
+        }
+
+        function checkAwakenEffect() { if (combo >= 20) document.getElementById('typing-box').classList.add(currentTeam === 'create' ? 'awaken-create' : 'awaken-destroy'); }
+
+        function updateStatusUI() {
+            document.getElementById('my-score').textContent = myScore.toLocaleString(); document.getElementById('my-combo').textContent = combo;
+            const cg = document.getElementById('combo-gauge'); cg.style.width = `${Math.min((combo / 50) * 100, 100)}%`;
+            if (combo >= 20) { cg.className = "h-full transition-all duration-200 shadow-[0_0_10px_#fef08a] bg-white"; document.getElementById('my-combo').className="font-cyber text-2xl text-yellow-400"; }
+            else if (combo > 0) { cg.className = "h-full transition-all duration-200 bg-yellow-400"; document.getElementById('my-combo').className="font-cyber text-2xl text-yellow-400"; }
+            else { cg.className = "h-full transition-all duration-200 bg-yellow-400"; document.getElementById('my-combo').className="font-cyber text-2xl text-gray-500"; }
+        }
+
+        function endGame(antiCheatReason) {
+            isGameActive = false; clearInterval(timerInterval);
+            if (antiCheatReason) { alert(antiCheatReason); returnToTop(); return; }
+
+            const me = rankings.find(r => r.isMe);
+            if (me) me.score = Math.max(me.score, myScore);
+            rankings.sort((a, b) => b.score - a.score);
+
+            let accuracy = totalTyped > 0 ? Math.floor(((totalTyped - totalMissed) / totalTyped) * 100) : 0;
+            let myRank = rankings.findIndex(r => r.isMe) + 1;
+
+            // playCount・bestスコア更新
+            playerData.playCount = (playerData.playCount || 0) + 1;
+            if (currentTeam === 'create')  playerData.bestCreate  = Math.max(playerData.bestCreate  || 0, myScore);
+            if (currentTeam === 'destroy') playerData.bestDestroy = Math.max(playerData.bestDestroy || 0, myScore);
+
+            let encountered = new Set(playerData.words || []); playedWordsLog.forEach(w => encountered.add(w.word));
+            playerData.currency += myScore; playerData.totalContribution += myScore;
+
+            // 世界ゲージ比率を計算（称号チェック用）
+            const gaugeTotal = globalPoints.create + globalPoints.destroy;
+            const gaugeCreatePct = gaugeTotal > 0 ? (globalPoints.create / gaugeTotal * 100) : 50;
+
+            const stats = {
+                team:              currentTeam,
+                score:             myScore,
+                accuracy:          accuracy,
+                rank:              myRank,
+                playedWords:       playedWordsLog.map(w => w.word),
+                words:             encountered.size,
+                totalContribution: playerData.totalContribution,
+                playCount:         playerData.playCount,
+                bestCreate:        playerData.bestCreate  || 0,
+                bestDestroy:       playerData.bestDestroy || 0,
+                gaugeCreate:       gaugeCreatePct,
+                hour:              new Date().getHours()
+            };
+
+            let newlyUnlocked = []; let highestEarned = null; let maxWeightPerCat = {};
+            GAME_TITLES.forEach(def => { if (def.check(stats)) { if (!maxWeightPerCat[def.cat] || def.weight > maxWeightPerCat[def.cat]) maxWeightPerCat[def.cat] = def.weight; if (!highestEarned || def.weight > highestEarned.weight) highestEarned = def; } });
+            GAME_TITLES.forEach(def => { if (maxWeightPerCat[def.cat] !== undefined && def.weight <= maxWeightPerCat[def.cat]) { if (!playerData.unlocked.includes(def.id)) { playerData.unlocked.push(def.id); newlyUnlocked.push(def); } } });
+            playerData.words = Array.from(encountered); currentEarnedTitle = highestEarned || GAME_TITLES[0];
+
+            playerData.history.unshift({ date: new Date().toLocaleString(), team: currentTeam, score: myScore, accuracy: accuracy, rank: myRank, title: currentEarnedTitle.title });
+            if (playerData.history.length > 30) playerData.history.pop();
+            saveCollection();
+
+            // DB同期
+            DB.submitResult(playerData.id, myScore, currentTeam, playerData.name)
+              .then(dbRankings => { _applyDBRankings(dbRankings); renderRanking(); });
+            DB.contributeToFaction(currentTeam, myScore);
+
+            document.getElementById('result-rank').textContent = myRank + (myRank === 1 ? "st" : myRank === 2 ? "nd" : myRank === 3 ? "rd" : "th");
+            document.getElementById('result-score').textContent = myScore.toLocaleString();
+            document.getElementById('result-max-combo').textContent = maxCombo;
+            document.getElementById('result-accuracy').textContent = accuracy + "%";
+
+            const te = document.getElementById('result-earned-title'); te.textContent = `『${currentEarnedTitle.title}』`; te.className = `text-4xl font-bold tracking-widest animate-pulse mt-2 ${currentEarnedTitle.color}`;
+            const nuEl = document.getElementById('result-new-unlocks');
+            if (newlyUnlocked.length > 1) { nuEl.textContent = `+ 他 ${newlyUnlocked.length - 1} 個の称号解放！`; nuEl.classList.remove('hidden'); } else { nuEl.classList.add('hidden'); }
+
+            document.getElementById('result-title').textContent = currentTeam === 'create' ? "SYSTEM SECURED" : "SYSTEM DESTROYED";
+            document.getElementById('result-title').className = `text-5xl font-cyber mb-4 tracking-wider ${currentTeam === 'create' ? 'text-yellow-200' : 'text-purple-400'}`;
+
+            const logList = document.getElementById('result-log-list'); logList.innerHTML = '';
+            if (playedWordsLog.length === 0) { logList.innerHTML = '<p class="text-gray-500 text-center col-span-2">データがありません</p>'; }
+            else {
+                playedWordsLog.forEach(w => {
+                    const colorClass = currentTeam === 'create' ? 'text-yellow-200' : 'text-purple-400';
+                    const newBadge = w.isNew ? '<span class="ml-2 bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-[0_0_5px_rgba(244,63,94,0.8)] animate-pulse">NEW!</span>' : '';
+                    logList.innerHTML += `<div class="bg-gray-800/50 p-3 rounded border border-gray-700 flex flex-col hover:bg-gray-800 transition-colors"><div class="flex items-center"><span class="font-bold text-sm ${colorClass}">${w.word}</span>${newBadge}</div><span class="text-[10px] text-gray-300 mt-1 leading-relaxed">${w.desc}</span></div>`;
+                });
+            }
+            setTimeout(() => { document.getElementById('result-screen').classList.remove('hidden'); document.getElementById('result-screen').classList.add('flex'); }, 1000);
+            renderRanking();
+            updateBGMPitch();
+        }
+
+        function shareScore() {
+            const teamName = currentTeam === 'create' ? "創造チーム" : "破壊チーム";
+            const scoreStr = myScore.toLocaleString();
+            const myRank = rankings.findIndex(r => r.isMe) + 1;
+            const text = `【${teamName}】に参戦し、ランキング ${myRank}位 (スコア: ${scoreStr}pt) を達成！\n称号『${currentEarnedTitle.title}』を手に入れた！\n\n全プレイヤー共有の勢力戦タイピングゲーム #CyberFaction`;
+            window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent("https://cyber-faction.example.com")}`, '_blank', 'width=600,height=400');
+        }
+
+        // ★ DB版: 世界ゲージをDBから取得して表示
+        async function initGlobalPoints() {
+            const gauge = await DB.getWorldGauge();
+            globalPoints = { ...gauge };
+            updateGauge();
+        }
+
+        // ★ DB版: リアルタイムリスナーを設定（旧: setIntervalでランダム加算）
+        // Supabase移行時はこの関数の中身がsupabase.channel()に変わるだけ
+        function simulateGlobalActivity() {
+            // 世界ゲージの変更を受け取る
+            DB.onWorldGaugeChange((gauge) => {
+                globalPoints = { ...gauge };
+                updateGauge();
+            });
+            // ランキングの変更を受け取る
+            DB.onRankingsChange((dbPlayers) => {
+                _applyDBRankings(dbPlayers);
+                renderRanking();
+            });
+            // ポーリング（BroadcastChannelの補完・他ブラウザからの変更を検知）
+            DB.startPolling(15000);
+        }
+
+        // DBから取得したプレイヤー一覧をrankings配列に適用する内部関数
+        function _applyDBRankings(dbPlayers) {
+            const me = rankings.find(r => r.isMe);
+            const myHighScore = me ? me.score : 0;
+            const myEntry = {
+                name:              playerData.name || 'YOU',
+                score:             Math.max(myScore || 0, myHighScore),
+                totalContribution: playerData.totalContribution || 0,
+                isMe:              true,
+                team:              playerData.faction || 'create'
+            };
+            const others = (dbPlayers || [])
+                .filter(p => p.id !== playerData.id)
+                .map(p => ({
+                    name:              p.name,
+                    score:             p.highScore         || 0,
+                    totalContribution: p.totalContribution || 0,
+                    isMe:              false,
+                    team:              p.faction || 'create'
+                }));
+            rankings = [...others, myEntry];
+        }
+
+        // ★ DB版: ランキングをDBから取得（旧: NPC固定スコアで初期化）
+        async function initRankings() {
+            const dbPlayers = await DB.getRankings();
+            _applyDBRankings(dbPlayers);
+            renderRanking();
+        }
+
+        function updateGauge() {
+            const total = globalPoints.create + globalPoints.destroy;
+            const cp = (globalPoints.create / total * 100).toFixed(1); const dp = (globalPoints.destroy / total * 100).toFixed(1);
+            ['start','game'].forEach(p => {
+                document.getElementById(`${p}-gauge-create`).style.width = cp+'%'; document.getElementById(`${p}-gauge-destroy`).style.width = dp+'%';
+                document.getElementById(`${p}-score-create`).textContent = cp+'%'; document.getElementById(`${p}-score-destroy`).textContent = dp+'%';
+            });
+            const totalEl = document.getElementById('start-total-contrib');
+            if (totalEl) totalEl.textContent = total.toLocaleString();
+            updateWorldBg(parseFloat(cp));
+        }
+
+        // ===== 世界ゲージ連動背景システム =====
+        let _glitchTimer = null;
+        function updateWorldBg(createPct) {
+            if (!soundSettings.visual) return;
+            const body   = document.body;
+            const ovGrid = document.getElementById('world-bg-overlay');
+            const ovGltc = document.getElementById('glitch-overlay');
+            if (!ovGrid || !ovGltc) return;
+
+            // 既存クラスをリセット
+            body.classList.remove('world-create-weak','world-create-strong','world-create-extreme','world-destroy-weak','world-destroy-strong','world-destroy-extreme');
+            if (_glitchTimer) { clearInterval(_glitchTimer); _glitchTimer = null; }
+
+            const cp = createPct ?? (globalPoints.create / (globalPoints.create + globalPoints.destroy) * 100);
+            const dp = 100 - cp;
+
+            if (cp >= 80) {
+                body.classList.add('world-create-extreme');
+                ovGrid.style.backgroundImage = 'linear-gradient(rgba(250,204,21,0.07) 1px,transparent 1px),linear-gradient(90deg,rgba(250,204,21,0.07) 1px,transparent 1px)';
+                ovGrid.style.backgroundSize  = '36px 36px';
+                ovGrid.style.opacity = '1';
+                ovGltc.style.opacity = '0';
+            } else if (cp >= 60) {
+                body.classList.add('world-create-strong');
+                ovGrid.style.backgroundImage = 'linear-gradient(rgba(250,204,21,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(250,204,21,0.025) 1px,transparent 1px)';
+                ovGrid.style.backgroundSize  = '50px 50px';
+                ovGrid.style.opacity = '1';
+                ovGltc.style.opacity = '0';
+            } else if (dp >= 80) {
+                body.classList.add('world-destroy-extreme');
+                ovGrid.style.opacity = '0';
+                _startGlitch(ovGltc, 'extreme');
+            } else if (dp >= 60) {
+                body.classList.add('world-destroy-strong');
+                ovGrid.style.opacity = '0';
+                _startGlitch(ovGltc, 'normal');
+            } else {
+                ovGrid.style.opacity = '0';
+                ovGltc.style.opacity = '0';
+            }
+        }
+
+        function _startGlitch(el, intensity) {
+            const iv = intensity === 'extreme' ? 1500 : 4000;
+            _glitchTimer = setInterval(() => {
+                const lines = intensity === 'extreme' ? 5 : 2;
+                let html = '';
+                for (let i = 0; i < lines; i++) {
+                    const y  = Math.floor(Math.random() * window.innerHeight);
+                    const h  = Math.floor(1 + Math.random() * (intensity === 'extreme' ? 7 : 3));
+                    const op = intensity === 'extreme' ? 0.45 : 0.28;
+                    html += `<div style="position:absolute;top:${y}px;left:0;right:0;height:${h}px;background:rgba(168,85,247,${op})"></div>`;
+                }
+                el.innerHTML = html; el.style.opacity = '1';
+                setTimeout(() => { el.style.opacity = '0'; el.innerHTML = ''; }, intensity === 'extreme' ? 160 : 100);
+                if (intensity === 'extreme' && Math.random() > 0.5) {
+                    setTimeout(() => {
+                        const y2 = Math.floor(Math.random() * window.innerHeight);
+                        el.innerHTML = `<div style="position:absolute;top:${y2}px;left:0;right:0;height:3px;background:rgba(232,121,249,0.5)"></div>`;
+                        el.style.opacity = '1';
+                        setTimeout(() => { el.style.opacity = '0'; el.innerHTML = ''; }, 80);
+                    }, 200);
+                }
+            }, iv);
+        }
+
+        // ===== パーティクルシステム（typing-box内） =====
+        let _particles = [], _particleRaf = null;
+        function startParticles(effect) {
+            if (!soundSettings.visual) return;
+            const canvas = document.getElementById('particle-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const parent = canvas.parentElement;
+            canvas.width  = parent.offsetWidth;
+            canvas.height = parent.offsetHeight;
+
+            if (_particleRaf) { cancelAnimationFrame(_particleRaf); _particleRaf = null; }
+            _particles = [];
+
+            function spawn() {
+                const w = canvas.width, h = canvas.height;
+                const fx = effect;
+                let p = { x:0, y:0, vx:0, vy:0, life:1, max:60, r:255, g:255, b:255, sz:2 };
+                if (fx==='circuit'||fx==='matrix') {
+                    p = { x:Math.random()*w, y:h+4, vx:(Math.random()-.5)*.7, vy:-(1+Math.random()*2), life:1, max:70+Math.random()*40, r:250, g:204, b:21, sz:1+Math.random()*2.5 };
+                } else if (fx==='stars') {
+                    p = { x:Math.random()*w, y:Math.random()*h, vx:(Math.random()-.5)*.3, vy:(Math.random()-.5)*.3, life:1, max:90+Math.random()*60, r:255, g:240+Math.floor(Math.random()*15), b:100+Math.floor(Math.random()*100), sz:.8+Math.random()*2 };
+                } else if (fx==='lightning') {
+                    p = { x:Math.random()*w, y:0, vx:(Math.random()-.5)*1.5, vy:1.5+Math.random()*3, life:1, max:40+Math.random()*30, r:168+Math.floor(Math.random()*87), g:85, b:247, sz:1+Math.random()*3 };
+                } else if (fx==='void'||fx==='corruption') {
+                    p = { x:Math.random()*w, y:-4, vx:(Math.random()-.5)*1, vy:1+Math.random()*2.5, life:1, max:60+Math.random()*40, r:168, g:0, b:200+Math.floor(Math.random()*55), sz:1+Math.random()*3 };
+                } else if (fx==='glitch') {
+                    p = { x:Math.random()*w, y:Math.random()*h, vx:(Math.random()-.5)*3, vy:(Math.random()-.5)*.5, life:1, max:20+Math.random()*20, r:220, g:38, b:38, sz:1+Math.random()*5 };
+                } else { // sparks
+                    p = { x:Math.random()*w, y:Math.random()*h, vx:(Math.random()-.5)*2, vy:(Math.random()-.5)*2, life:1, max:30+Math.random()*30, r:200+Math.floor(Math.random()*55), g:200+Math.floor(Math.random()*55), b:200+Math.floor(Math.random()*55), sz:.8+Math.random()*1.5 };
+                }
+                _particles.push(p);
+            }
+
+            function loop() {
+                ctx.clearRect(0,0,canvas.width,canvas.height);
+                if (_particles.length < 30) spawn();
+                _particles = _particles.filter(p=>p.life>0);
+                for (const p of _particles) {
+                    p.x+=p.vx; p.y+=p.vy; p.life--;
+                    const a = (p.life/p.max)*.75;
+                    ctx.beginPath(); ctx.arc(p.x,p.y,p.sz,0,Math.PI*2);
+                    ctx.fillStyle=`rgba(${p.r},${p.g},${p.b},${a})`; ctx.fill();
+                }
+                _particleRaf = requestAnimationFrame(loop);
+            }
+            loop();
+        }
+
+        function stopParticles() {
+            if (_particleRaf) { cancelAnimationFrame(_particleRaf); _particleRaf = null; }
+            _particles = [];
+            const canvas = document.getElementById('particle-canvas');
+            if (canvas) canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+        }
+
+        let currentRankTab = 'score'; // 'score' | 'contrib'
+
+        function switchRankTab(tab) {
+            currentRankTab = tab;
+            // スタート画面タブ
+            const ss = document.getElementById('tab-score-start');
+            const cs = document.getElementById('tab-contrib-start');
+            // ゲーム画面タブ
+            const sg = document.getElementById('tab-score-game');
+            const cg = document.getElementById('tab-contrib-game');
+
+            const activeClass  = 'bg-yellow-900/60 text-yellow-300 border border-yellow-700';
+            const inactiveClass= 'text-gray-500 border border-gray-700 hover:text-gray-300';
+
+            if (tab === 'score') {
+                if(ss){ ss.className = `flex-1 text-[10px] font-cyber tracking-widest py-1 rounded transition-colors ${activeClass}`; }
+                if(cs){ cs.className = `flex-1 text-[10px] font-cyber tracking-widest py-1 rounded transition-colors ${inactiveClass}`; }
+                if(sg){ sg.className = `flex-1 text-[10px] font-cyber tracking-widest py-1 rounded transition-colors ${activeClass}`; }
+                if(cg){ cg.className = `flex-1 text-[10px] font-cyber tracking-widest py-1 rounded transition-colors ${inactiveClass}`; }
+            } else {
+                if(ss){ ss.className = `flex-1 text-[10px] font-cyber tracking-widest py-1 rounded transition-colors ${inactiveClass}`; }
+                if(cs){ cs.className = `flex-1 text-[10px] font-cyber tracking-widest py-1 rounded transition-colors ${activeClass}`; }
+                if(sg){ sg.className = `flex-1 text-[10px] font-cyber tracking-widest py-1 rounded transition-colors ${inactiveClass}`; }
+                if(cg){ cg.className = `flex-1 text-[10px] font-cyber tracking-widest py-1 rounded transition-colors ${activeClass}`; }
+            }
+            renderRanking();
+        }
+
+        function renderRanking() {
+            const isContrib = currentRankTab === 'contrib';
+
+            // タブに応じてソート
+            const sorted = [...rankings].sort((a, b) =>
+                isContrib
+                    ? (b.totalContribution || 0) - (a.totalContribution || 0)
+                    : b.score - a.score
+            );
+
+            const myIndex = sorted.findIndex(r => r.isMe);
+            const top10   = sorted.slice(0, 10);
+
+            const buildItemHTML = (r, i, isOut) => {
+                const rankStr   = isOut ? '<span class="text-[10px]">圏外</span>' : i + 1;
+                const rankColor = isOut ? 'text-gray-500' : (i < 3 ? 'text-yellow-400 font-bold' : 'text-gray-500');
+                const nameColor = r.isMe ? 'text-white font-bold' : 'text-gray-300';
+                const bgClass   = r.isMe ? 'bg-gray-800 border-l-2 border-white' : '';
+                const teamColor = r.team === 'create' ? 'text-yellow-400' : 'text-purple-400';
+                const teamStr   = r.team ? r.team.slice(0,3).toUpperCase() : '---';
+                const val       = isContrib
+                    ? (r.totalContribution || 0).toLocaleString() + ' pt'
+                    : (r.score || 0).toLocaleString();
+
+                return `<div class="flex justify-between items-center p-2 rounded ${bgClass} overflow-hidden">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <span class="${rankColor} w-6 text-right shrink-0">${rankStr}</span>
+                        <span class="${nameColor} truncate">${r.name}</span>
+                    </div>
+                    <div class="flex flex-col items-end shrink-0 ml-2">
+                        <span class="${teamColor} text-[10px] uppercase">${teamStr}</span>
+                        <span class="text-xs">${val}</span>
+                    </div>
+                </div>`;
+            };
+
+            let html = top10.map((r, i) => buildItemHTML(r, i, false)).join('');
+
+            if (myIndex >= 10) {
+                html += `<div class="sticky bottom-0 bg-gray-900 border-t border-gray-700 pt-1 mt-1 z-10 shadow-[0_-5px_10px_rgba(0,0,0,0.5)]">`;
+                html += buildItemHTML(sorted[myIndex], myIndex, true);
+                html += `</div>`;
+            }
+
+            document.getElementById('start-ranking-list').innerHTML = html;
+            document.getElementById('ranking-list').innerHTML = html;
+        }
+
+        // Boot
+        window.onload = async () => {
+            DB.init();
+            await loadWordsData();
+            loadCollection();
+            renderTopPanel();
+            await initGlobalPoints();     // DBから世界ゲージを取得（内部でupdateWorldBgも呼ばれる）
+            await initRankings();
+            simulateGlobalActivity();
+            applyTitleGlow();             // 既存セット称号のグローを初期適用
+            updateSettingsUI();
+        };
+    </script>
+</body>
+</html>
